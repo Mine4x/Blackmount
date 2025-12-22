@@ -4,6 +4,7 @@
 #include <hal/hal.h>
 #include <arch/i686/irq.h>
 #include <debug.h>
+#include "vga_text.h"
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -18,8 +19,12 @@ void timer(Registers* regs)
 void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 {
     memset(&__bss_start, 0, (&__end) - (&__bss_start));
+    log_ok("Boot", "Did memset");
 
     HAL_Initialize();
+    log_ok("Boot", "Initialized HAL");
+
+    printf("");
 
     log_debug("Main", "This is a debug msg!");
     log_info("Main", "This is an info msg!");
