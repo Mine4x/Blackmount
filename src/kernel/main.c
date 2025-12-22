@@ -4,7 +4,6 @@
 #include <hal/hal.h>
 #include <arch/i686/irq.h>
 #include <debug.h>
-#include "vga_text.h"
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -24,7 +23,7 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
 
-    printf("");
+    printf("Welcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
     log_debug("Main", "This is a debug msg!");
     log_info("Main", "This is an info msg!");
