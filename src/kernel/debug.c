@@ -15,17 +15,27 @@ static const char* const g_ColorReset = "\033[0m";
 
 void logf(const char* module, DebugLevel level, const char* fmt, ...)
 {
-    va_list args;
+    va_list args, args_copy;
     va_start(args, fmt);
-
+    va_copy(args_copy, args);
+    
     if (level < MIN_LOG_LEVEL)
+    {
+        va_end(args);
+        va_end(args_copy);
         return;
-
-    fputs(g_LogSeverityColors[level], VFS_FD_DEBUG);    // set color depending on level
-    fprintf(VFS_FD_DEBUG, "[%s] ", module);             // write module
-    vfprintf(VFS_FD_DEBUG, fmt, args);                  // write text
-    fputs(g_ColorReset, VFS_FD_DEBUG);                  // reset format
-    fputc('\n', VFS_FD_DEBUG);                          // newline
-
-    va_end(args);  
+    }
+    
+    fputs(g_LogSeverityColors[level], VFS_FD_DEBUG);
+    fprintf(VFS_FD_DEBUG, "[%s] ", module);
+    vfprintf(VFS_FD_DEBUG, fmt, args);
+    fputs(g_ColorReset, VFS_FD_DEBUG);
+    fputc('\n', VFS_FD_DEBUG);
+    
+    printf("%s[%s] ", g_LogSeverityColors[level], module);
+    printf(fmt, args_copy);
+    printf("%s\n", g_ColorReset);
+    
+    va_end(args);
+    va_end(args_copy);
 }
