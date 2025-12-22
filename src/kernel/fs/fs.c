@@ -33,6 +33,17 @@ static void str_cpy(char* dst, const char* src) {
 #define MAX_CHILDREN 64
 #define MAX_DATA 4096
 
+#define FS_SUCCESS 0
+#define FS_ERROR -1
+#define FS_EXISTS -2
+#define FS_NOT_FOUND -3
+#define FS_INVALID_PARAM -4
+#define FS_NOT_DIR -5
+#define FS_NOT_FILE -6
+#define FS_DIR_FULL -7
+#define FS_DIR_NOT_EMPTY -8
+#define FS_NO_EXEC -9
+
 typedef struct FSNode FSNode;
 
 struct FSNode {
@@ -84,7 +95,6 @@ static FSNode* find_node(const char* path, FSNode** parent_out) {
     }
     
     if (path[1] == 0) {
-        log_debug(FS_MODULE, "Found root node");
         if (parent_out) *parent_out = 0;
         return root;
     }
@@ -122,7 +132,6 @@ static FSNode* find_node(const char* path, FSNode** parent_out) {
         }
         
         if (!found) {
-            log_debug(FS_MODULE, "Path not found: %s", path);
             if (parent_out) *parent_out = cur;
             return 0;
         }
@@ -131,7 +140,6 @@ static FSNode* find_node(const char* path, FSNode** parent_out) {
         start = end + 1;
     }
     
-    log_debug(FS_MODULE, "Found node: %s", path);
     if (parent_out) *parent_out = parent;
     return cur;
 }
@@ -153,36 +161,33 @@ static void get_basename(const char* path, char* out) {
     out[j] = 0;
 }
 
-void create_dir(const char* path) {
-    log_info(FS_MODULE, "Creating directory: %s", path);
-    
+int create_dir(const char* path) {
     if (!root || !path) {
         log_err(FS_MODULE, "Invalid parameters for create_dir");
-        return;
+        return FS_INVALID_PARAM;
     }
     
     FSNode* parent = 0;
     FSNode* existing = find_node(path, &parent);
     
     if (existing) {
-        log_warn(FS_MODULE, "Directory already exists: %s", path);
-        return;
+        return FS_EXISTS;
     }
     
     if (!parent) {
         log_err(FS_MODULE, "Parent directory not found for: %s", path);
-        return;
+        return FS_NOT_FOUND;
     }
     
     if (parent->child_count >= MAX_CHILDREN) {
         log_err(FS_MODULE, "Parent directory full (max %d children)", MAX_CHILDREN);
-        return;
+        return FS_DIR_FULL;
     }
     
     FSNode* new_dir = (FSNode*)kmalloc(sizeof(FSNode));
     if (!new_dir) {
         log_crit(FS_MODULE, "Failed to allocate memory for directory");
-        return;
+        return FS_ERROR;
     }
     
     get_basename(path, new_dir->name);
@@ -196,56 +201,72 @@ void create_dir(const char* path) {
     memset(new_dir->data, 0, sizeof(new_dir->data));
     
     parent->children[parent->child_count++] = new_dir;
-    log_ok(FS_MODULE, "Directory created: %s", path);
+    return FS_SUCCESS;
 }
 
-void get_dir_cont(const char* path) {
-    log_debug(FS_MODULE, "Listing directory: %s", path);
-    
+int get_dir_cont(const char* path, char* buffer, int max_size) {
     FSNode* node = find_node(path, 0);
     if (!node) {
         log_err(FS_MODULE, "Directory not found: %s", path);
-        return;
+        return FS_NOT_FOUND;
     }
     
     if (!node->is_dir) {
         log_err(FS_MODULE, "Not a directory: %s", path);
-        return;
+        return FS_NOT_DIR;
     }
     
-    log_info(FS_MODULE, "Contents of %s (%d items):", path, node->child_count);
+    int offset = 0;
     for (int i = 0; i < node->child_count; i++) {
         FSNode* child = node->children[i];
-        printf("%s", child->name);
-        if (child->is_dir) printf("/");
-        printf("\n");
+        int name_len = str_len(child->name);
+        int suffix_len = child->is_dir ? 2 : 1;  // "/" or "\n"
+        
+        if (offset + name_len + suffix_len >= max_size) {
+            break;
+        }
+        
+        str_cpy(buffer + offset, child->name);
+        offset += name_len;
+        
+        if (child->is_dir) {
+            buffer[offset++] = '/';
+        }
+        buffer[offset++] = '\n';
     }
+    
+    if (offset > 0 && buffer[offset - 1] == '\n') {
+        buffer[offset - 1] = 0;
+        offset--;
+    } else {
+        buffer[offset] = 0;
+    }
+    
+    return offset;
 }
 
-void delete_dir(const char* path) {
-    log_info(FS_MODULE, "Deleting directory: %s", path);
-    
+int delete_dir(const char* path) {
     FSNode* parent = 0;
     FSNode* node = find_node(path, &parent);
     
     if (!node) {
         log_err(FS_MODULE, "Directory not found: %s", path);
-        return;
+        return FS_NOT_FOUND;
     }
     
     if (!node->is_dir) {
         log_err(FS_MODULE, "Not a directory: %s", path);
-        return;
+        return FS_NOT_DIR;
     }
     
     if (node == root) {
         log_err(FS_MODULE, "Cannot delete root directory");
-        return;
+        return FS_ERROR;
     }
     
     if (node->child_count > 0) {
         log_err(FS_MODULE, "Directory not empty: %s (%d items)", path, node->child_count);
-        return;
+        return FS_DIR_NOT_EMPTY;
     }
     
     for (int i = 0; i < parent->child_count; i++) {
@@ -259,39 +280,36 @@ void delete_dir(const char* path) {
     }
     
     kfree(node);
-    log_ok(FS_MODULE, "Directory deleted: %s", path);
+    return FS_SUCCESS;
 }
 
-void create_file(const char* path) {
-    log_info(FS_MODULE, "Creating file: %s", path);
-    
+int create_file(const char* path) {
     if (!root || !path) {
         log_err(FS_MODULE, "Invalid parameters for create_file");
-        return;
+        return FS_INVALID_PARAM;
     }
     
     FSNode* parent = 0;
     FSNode* existing = find_node(path, &parent);
     
     if (existing) {
-        log_warn(FS_MODULE, "File already exists: %s", path);
-        return;
+        return FS_EXISTS;
     }
     
     if (!parent || !parent->is_dir) {
         log_err(FS_MODULE, "Parent directory not found for: %s", path);
-        return;
+        return FS_NOT_FOUND;
     }
     
     if (parent->child_count >= MAX_CHILDREN) {
         log_err(FS_MODULE, "Parent directory full (max %d children)", MAX_CHILDREN);
-        return;
+        return FS_DIR_FULL;
     }
     
     FSNode* new_file = (FSNode*)kmalloc(sizeof(FSNode));
     if (!new_file) {
         log_crit(FS_MODULE, "Failed to allocate memory for file");
-        return;
+        return FS_ERROR;
     }
     
     get_basename(path, new_file->name);
@@ -305,56 +323,51 @@ void create_file(const char* path) {
     memset(new_file->data, 0, sizeof(new_file->data));
     
     parent->children[parent->child_count++] = new_file;
-    log_ok(FS_MODULE, "File created: %s", path);
+    return FS_SUCCESS;
 }
 
-void execute_file(const char* path) {
-    log_info(FS_MODULE, "Executing file: %s", path);
-    
+int execute_file(const char* path) {
     FSNode* node = find_node(path, 0);
     if (!node) {
         log_err(FS_MODULE, "File not found: %s", path);
-        return;
+        return FS_NOT_FOUND;
     }
     
     if (node->is_dir) {
         log_err(FS_MODULE, "Cannot execute directory: %s", path);
-        return;
+        return FS_NOT_FILE;
     }
     
     if (node->flags == LINKED_TO_CALLBACK && node->callback) {
-        log_debug(FS_MODULE, "Executing callback for: %s", path);
         node->callback();
-        log_ok(FS_MODULE, "Callback executed: %s", path);
+        return FS_SUCCESS;
     } else if (node->flags == EXECUTABLE && node->data_size > 0) {
-        log_debug(FS_MODULE, "Executing binary for: %s", path);
         void (*exec)(void) = (void(*)(void))node->data;
         exec();
-        log_ok(FS_MODULE, "Binary executed: %s", path);
+        return FS_SUCCESS;
     } else {
-        log_warn(FS_MODULE, "File has no executable content: %s", path);
+        log_err(FS_MODULE, "File has no executable content: %s", path);
+        return FS_NO_EXEC;
     }
 }
 
-void delete_file(const char* path) {
-    log_info(FS_MODULE, "Deleting file: %s", path);
-    
+int delete_file(const char* path) {
     FSNode* parent = 0;
     FSNode* node = find_node(path, &parent);
     
     if (!node) {
         log_err(FS_MODULE, "File not found: %s", path);
-        return;
+        return FS_NOT_FOUND;
     }
     
     if (node->is_dir) {
         log_err(FS_MODULE, "Cannot delete directory as file: %s", path);
-        return;
+        return FS_NOT_DIR;
     }
     
     if (!parent) {
         log_err(FS_MODULE, "Cannot delete file without parent");
-        return;
+        return FS_ERROR;
     }
     
     for (int i = 0; i < parent->child_count; i++) {
@@ -368,68 +381,58 @@ void delete_file(const char* path) {
     }
     
     kfree(node);
-    log_ok(FS_MODULE, "File deleted: %s", path);
+    return FS_SUCCESS;
 }
 
-void write_file(const char* path, const char* data, int size) {
-    log_info(FS_MODULE, "Writing %d bytes to: %s", size, path);
-    
+int write_file(const char* path, const char* data, int size) {
     FSNode* node = find_node(path, 0);
     if (!node) {
         log_err(FS_MODULE, "File not found: %s", path);
-        return;
+        return FS_NOT_FOUND;
     }
     
     if (node->is_dir) {
         log_err(FS_MODULE, "Cannot write to directory: %s", path);
-        return;
+        return FS_NOT_FILE;
     }
     
     int copy_size = (size > MAX_DATA) ? MAX_DATA : size;
-    if (size > MAX_DATA) {
-        log_warn(FS_MODULE, "Data truncated from %d to %d bytes", size, MAX_DATA);
-    }
     
     memcpy(node->data, data, copy_size);
     node->data_size = copy_size;
-    log_ok(FS_MODULE, "Wrote %d bytes to: %s", copy_size, path);
+    return copy_size;
 }
 
-void set_file_callback(const char* path, void (*callback)(void)) {
-    log_info(FS_MODULE, "Setting callback for: %s", path);
-    
+int set_file_callback(const char* path, void (*callback)(void)) {
     FSNode* node = find_node(path, 0);
     if (!node) {
         log_err(FS_MODULE, "File not found: %s", path);
-        return;
+        return FS_NOT_FOUND;
     }
     
     if (node->is_dir) {
         log_err(FS_MODULE, "Cannot set callback on directory: %s", path);
-        return;
+        return FS_NOT_DIR;
     }
     
     node->flags = LINKED_TO_CALLBACK;
     node->callback = callback;
-    log_ok(FS_MODULE, "Callback set for: %s", path);
+    return FS_SUCCESS;
 }
 
 int read_file(const char* path, char* buffer, int max_size) {
-    log_debug(FS_MODULE, "Reading file: %s (max %d bytes)", path, max_size);
-    
     FSNode* node = find_node(path, 0);
     if (!node) {
         log_err(FS_MODULE, "File not found: %s", path);
-        return 0;
+        return FS_NOT_FOUND;
     }
     
     if (node->is_dir) {
         log_err(FS_MODULE, "Cannot read directory: %s", path);
-        return 0;
+        return FS_NOT_FILE;
     }
     
     int copy_size = (node->data_size > max_size) ? max_size : node->data_size;
     memcpy(buffer, node->data, copy_size);
-    log_ok(FS_MODULE, "Read %d bytes from: %s", copy_size, path);
     return copy_size;
 }

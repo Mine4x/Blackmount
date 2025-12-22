@@ -40,7 +40,6 @@ void init_heap() {
 
 void* kmalloc(unsigned int size) {
     if (!heap_initialized) {
-        log_info(HEAP_MODULE, "Auto-initializing heap on first malloc");
         init_heap();
     }
     
@@ -50,7 +49,6 @@ void* kmalloc(unsigned int size) {
     }
     
     unsigned int aligned_size = align(size);
-    log_debug(HEAP_MODULE, "Allocating %d bytes (aligned to %d)", size, aligned_size);
     
     Block* current = free_list;
     
@@ -61,8 +59,6 @@ void* kmalloc(unsigned int size) {
         }
         
         if (current->is_free && current->size >= aligned_size) {
-            log_debug(HEAP_MODULE, "Found suitable block at %p (size: %d)", current, current->size);
-            
             if (current->size >= aligned_size + sizeof(Block) + 8) {
                 Block* new_block = (Block*)((char*)current + sizeof(Block) + aligned_size);
                 new_block->magic = BLOCK_MAGIC;
@@ -72,14 +68,10 @@ void* kmalloc(unsigned int size) {
                 
                 current->size = aligned_size;
                 current->next = new_block;
-                
-                log_debug(HEAP_MODULE, "Block split: allocated %d bytes, remaining %d bytes", 
-                         aligned_size, new_block->size);
             }
             
             current->is_free = 0;
             void* ptr = (void*)((char*)current + sizeof(Block));
-            log_ok(HEAP_MODULE, "Allocated %d bytes at %p", aligned_size, ptr);
             return ptr;
         }
         
@@ -92,7 +84,7 @@ void* kmalloc(unsigned int size) {
 
 void kfree(void* ptr) {
     if (!ptr) {
-        log_debug(HEAP_MODULE, "Attempted to free NULL pointer");
+        log_warn(HEAP_MODULE, "Attempted to free NULL pointer");
         return;
     }
     
@@ -119,12 +111,9 @@ void kfree(void* ptr) {
         return;
     }
     
-    log_debug(HEAP_MODULE, "Freeing %d bytes at %p", block->size, ptr);
     block->is_free = 1;
     
     if (block->next && block->next->is_free) {
-        log_debug(HEAP_MODULE, "Coalescing with next block (%d + %d bytes)", 
-                 block->size, block->next->size);
         block->size += sizeof(Block) + block->next->size;
         block->next = block->next->next;
     }
@@ -135,13 +124,10 @@ void kfree(void* ptr) {
     }
     
     if (current && current->is_free) {
-        log_debug(HEAP_MODULE, "Coalescing with previous block (%d + %d bytes)", 
-                 current->size, block->size);
         current->size += sizeof(Block) + block->size;
         current->next = block->next;
     }
     
-    log_ok(HEAP_MODULE, "Memory freed successfully");
 }
 
 void get_heap_stats(HeapStats* stats) {
@@ -154,8 +140,6 @@ void get_heap_stats(HeapStats* stats) {
         log_err(HEAP_MODULE, "get_heap_stats called with NULL stats pointer");
         return;
     }
-    
-    log_debug(HEAP_MODULE, "Calculating heap statistics");
     
     stats->total_size = HEAP_SIZE;
     stats->used_size = 0;
@@ -174,9 +158,6 @@ void get_heap_stats(HeapStats* stats) {
         }
         current = current->next;
     }
-    
-    log_info(HEAP_MODULE, "Heap stats: %d/%d bytes used, %d blocks (%d free)", 
-             stats->used_size, stats->total_size, stats->num_blocks, stats->num_free_blocks);
 }
 
 void defrag_heap() {
@@ -185,24 +166,15 @@ void defrag_heap() {
         return;
     }
     
-    log_info(HEAP_MODULE, "Starting heap defragmentation");
-    
     int merged_count = 0;
     Block* current = free_list;
     while (current) {
         if (current->is_free && current->next && current->next->is_free) {
-            log_debug(HEAP_MODULE, "Merging blocks at %p and %p", current, current->next);
             current->size += sizeof(Block) + current->next->size;
             current->next = current->next->next;
             merged_count++;
         } else {
             current = current->next;
         }
-    }
-    
-    if (merged_count > 0) {
-        log_ok(HEAP_MODULE, "Defragmentation complete: merged %d blocks", merged_count);
-    } else {
-        log_info(HEAP_MODULE, "Defragmentation complete: no blocks to merge");
     }
 }
