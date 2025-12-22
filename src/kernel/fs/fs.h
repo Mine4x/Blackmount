@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FS_H
+#define FS_H
 
 typedef enum {
     EXECUTABLE = 0,
@@ -6,10 +7,23 @@ typedef enum {
 } FileFlags;
 
 void init_fs();
+
 void create_dir(const char* path);
-void get_dir_cont(const char*);
+
+void get_dir_cont(const char* path);
+
 void delete_dir(const char* path);
-void create_file(const char* path); //TODO
-void function_to_bin(const char* path, void(*callback)()); //For functions that the user can call and are in the Kernel only
+
+void create_file(const char* path);
+
 void execute_file(const char* path);
+
 void delete_file(const char* path);
+
+void write_file(const char* path, const char* data, int size);
+
+int read_file(const char* path, char* buffer, int max_size);
+
+void set_file_callback(const char* path, void (*callback)(void));
+
+#endif
