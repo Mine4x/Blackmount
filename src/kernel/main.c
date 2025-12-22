@@ -7,6 +7,7 @@
 #include <heap.h>
 #include <fs/fs.h>
 #include <input/keyboard/ps2.h>
+#include <apps/mountshell.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -34,20 +35,7 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
-    log_info("Kernel", "Initializing Keyboard");
-
-    keyboard_init();
-
-    log_ok("Kernel", "Started keytboard");
-
-    while (1) {
-        if (keyboard_has_input()) {
-            char c = keyboard_getchar();
-            if (c != 0) {
-                printf("%c", c);
-            }
-        }
-    }
+    mountshell_start();
 
     //i686_IRQ_RegisterHandler(0, timer);
 
