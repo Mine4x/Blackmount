@@ -30,5 +30,6 @@ int set_file_callback(const char* path, void (*callback)(void));
 int fs_exists(const char* path);
 int fs_is_dir(const char* path);
 int fs_is_file(const char* path);
+int fs_is_exec(const char* path);
 
 #endif

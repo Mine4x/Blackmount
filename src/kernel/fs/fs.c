@@ -434,3 +434,7 @@ int fs_is_file(const char* path) {
     FSNode* node = find_node(path, 0);
     return (node && !node->is_dir) ? 1 : 0;
 }
+
+int fs_is_exec(const char* path) {
+    return 1; /*TODO*/
+}

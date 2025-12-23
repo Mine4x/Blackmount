@@ -11,6 +11,7 @@
 #define LS_BUFFER_SIZE 1024
 #define MAX_ARGS 16
 #define MAX_PATH 256
+#define MAX_CACHE_ENTRIES 32
 
 typedef struct {
     char *data;
@@ -18,7 +19,87 @@ typedef struct {
     size_t capacity;
 } InputBuffer;
 
+typedef struct {
+    char cmd_name[64];
+    char full_path[MAX_PATH];
+    int valid;
+} CacheEntry;
+
+static CacheEntry cmd_cache[MAX_CACHE_ENTRIES];
+static int cache_initialized = 0;
+
 char PWD[256] = "/";
+
+static void cache_init() {
+    if (cache_initialized) return;
+    for (int i = 0; i < MAX_CACHE_ENTRIES; i++) {
+        cmd_cache[i].valid = 0;
+        cmd_cache[i].cmd_name[0] = '\0';
+        cmd_cache[i].full_path[0] = '\0';
+    }
+    cache_initialized = 1;
+}
+
+static int cache_lookup(const char* cmd, char* path_out) {
+    for (int i = 0; i < MAX_CACHE_ENTRIES; i++) {
+        if (cmd_cache[i].valid && str_cmp(cmd_cache[i].cmd_name, cmd) == 0) {
+            str_cpy(path_out, cmd_cache[i].full_path);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void cache_add(const char* cmd, const char* path) {
+    // Find empty slot or replace oldest (simple replacement strategy)
+    for (int i = 0; i < MAX_CACHE_ENTRIES; i++) {
+        if (!cmd_cache[i].valid) {
+            str_cpy(cmd_cache[i].cmd_name, cmd);
+            str_cpy(cmd_cache[i].full_path, path);
+            cmd_cache[i].valid = 1;
+            return;
+        }
+    }
+    // If no empty slot, replace first entry (simple FIFO)
+    str_cpy(cmd_cache[0].cmd_name, cmd);
+    str_cpy(cmd_cache[0].full_path, path);
+    cmd_cache[0].valid = 1;
+}
+
+static int try_execute_from_bin(const char* cmd) {
+    char path[MAX_PATH];
+    
+    // Check cache first
+    if (cache_lookup(cmd, path)) {
+        log_info("shell", "found %s in cache: %s", cmd, path);
+        execute_file(path);
+        return 1;
+    }
+    
+    // Build path /bin/cmd
+    str_cpy(path, "/bin/");
+    int len = str_len(path);
+    int cmd_len = str_len(cmd);
+    for (int i = 0; i < cmd_len && len < MAX_PATH - 1; i++) {
+        path[len++] = cmd[i];
+    }
+    path[len] = '\0';
+    
+    // Check if file exists
+    if (fs_exists(path)) {
+        //log_info("shell", "found %s at %s", cmd, path);
+        cache_add(cmd, path);
+        execute_file(path);
+        return 1;
+    }
+    
+    return 0;
+}
+
+static int try_execute_from_pwd(const char* cmd) {
+    /*TODO*/
+    return 0;
+}
 
 static void input_init(InputBuffer *buf) {
     buf->data = NULL;
@@ -175,6 +256,7 @@ void buildin_mkdir(const char* path) {
 
 void mountshell_start() {
     keyboard_init();
+    cache_init();
     InputBuffer input;
     input_init(&input);
     printf("\x1b[36mMountshell v0.0.1\n");
@@ -197,11 +279,14 @@ void mountshell_start() {
                         if (args.argc > 1) buildin_ls(args.argv[1]);
                         else buildin_ls(PWD);
                     } else if (str_cmp(args.argv[0], "help") == 0 || str_cmp(args.argv[0], "?") == 0) {
-                        printf("Available commands: cd, ls, help, ?\n");
+                        printf("Available commands: cd, ls, help, ?, mkdir\n");
                     } else if (str_cmp(args.argv[0], "mkdir") == 0) {
                         if (args.argc > 1) buildin_mkdir(args.argv[1]);
                     } else {
-                        printf("Unknown command: %s\n", args.argv[0]);
+                        // Try to execute from /bin before showing error
+                        if (!try_execute_from_bin(args.argv[0])) {
+                            printf("Unknown command: %s\n", args.argv[0]);
+                        }
                     }
                 }
             }
