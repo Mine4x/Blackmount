@@ -2,32 +2,12 @@
 #include "memory.h"
 #include "stdio.h"
 #include "debug.h"
+#include "string.h"
 
 #define FS_MODULE "FS"
 
 extern void* kmalloc(unsigned int size);
 extern void kfree(void* ptr);
-
-static int str_len(const char* s) {
-    int i = 0;
-    while (s[i]) i++;
-    return i;
-}
-
-static int str_cmp(const char* s1, const char* s2) {
-    int i = 0;
-    while (s1[i] && s2[i] && s1[i] == s2[i]) i++;
-    return s1[i] - s2[i];
-}
-
-static void str_cpy(char* dst, const char* src) {
-    int i = 0;
-    while (src[i]) {
-        dst[i] = src[i];
-        i++;
-    }
-    dst[i] = 0;
-}
 
 #define MAX_NAME 256
 #define MAX_CHILDREN 64
@@ -435,4 +415,22 @@ int read_file(const char* path, char* buffer, int max_size) {
     int copy_size = (node->data_size > max_size) ? max_size : node->data_size;
     memcpy(buffer, node->data, copy_size);
     return copy_size;
+}
+
+// Returns 1 if the path exists, 0 otherwise
+int fs_exists(const char* path) {
+    FSNode* node = find_node(path, 0);
+    return node ? 1 : 0;
+}
+
+// Returns 1 if the path exists and is a directory, 0 otherwise
+int fs_is_dir(const char* path) {
+    FSNode* node = find_node(path, 0);
+    return (node && node->is_dir) ? 1 : 0;
+}
+
+// Returns 1 if the path exists and is a file, 0 otherwise
+int fs_is_file(const char* path) {
+    FSNode* node = find_node(path, 0);
+    return (node && !node->is_dir) ? 1 : 0;
 }

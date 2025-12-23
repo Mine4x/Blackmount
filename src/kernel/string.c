@@ -1,0 +1,22 @@
+#include "string.h"
+
+size_t str_len(const char* s) {
+    size_t i = 0;
+    while (s[i]) i++;
+    return i;
+}
+
+int str_cmp(const char* s1, const char* s2) {
+    size_t i = 0;
+    while (s1[i] && s2[i] && s1[i] == s2[i]) i++;
+    return (unsigned char)s1[i] - (unsigned char)s2[i];
+}
+
+void str_cpy(char* dst, const char* src) {
+    size_t i = 0;
+    while (src[i]) {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = 0; // null terminator
+}

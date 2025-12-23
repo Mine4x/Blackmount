@@ -217,3 +217,21 @@ void VGA_putc(char c)
 
     VGA_setcursor(g_ScreenX, g_ScreenY);
 }
+
+void VGA_backspace()
+{
+    if (g_ScreenX == 0 && g_ScreenY == 0)
+        return;
+
+    if (g_ScreenX == 0) {
+        g_ScreenY--;
+        g_ScreenX = SCREEN_WIDTH - 1;
+    } else {
+        g_ScreenX--;
+    }
+
+    VGA_putchr(g_ScreenX, g_ScreenY, '\0');
+    VGA_putcolor(g_ScreenX, g_ScreenY, g_CurrentColor);
+
+    VGA_setcursor(g_ScreenX, g_ScreenY);
+}
