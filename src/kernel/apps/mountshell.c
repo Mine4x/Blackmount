@@ -148,7 +148,7 @@ void buildin_ls(const char* path) {
     resolve_path(PWD, path, resolved);
     int result = get_dir_cont(resolved, buffer, LS_BUFFER_SIZE);
     if (result < 0) {
-        log_err("shell", "ls failed on path: %s", resolved);
+        log_err("ls", "ls failed on path: %s", resolved);
         return;
     }
     int i = 0;
@@ -159,6 +159,17 @@ void buildin_ls(const char* path) {
         for (int j = 0; j < len; j++) printf("%c", entry[j]);
         printf("\n");
         if (buffer[i] == '\n') i++;
+    }
+}
+
+void buildin_mkdir(const char* path) {
+    char resolved[MAX_PATH];
+    resolve_path(PWD, path, resolved);
+
+    int result = create_dir(resolved);
+
+    if (result < 0) {
+        log_err("mkdir", "mkdir couldn't create path: %s", resolved);
     }
 }
 
@@ -187,13 +198,15 @@ void mountshell_start() {
                         else buildin_ls(PWD);
                     } else if (str_cmp(args.argv[0], "help") == 0 || str_cmp(args.argv[0], "?") == 0) {
                         printf("Available commands: cd, ls, help, ?\n");
+                    } else if (str_cmp(args.argv[0], "mkdir") == 0) {
+                        if (args.argc > 1) buildin_mkdir(args.argv[1]);
                     } else {
                         printf("Unknown command: %s\n", args.argv[0]);
                     }
                 }
             }
             input_clear(&input);
-            printf("%s> ", PWD);
+            printf("\x1b[0m%s> ", PWD);
             continue;
         }
         if (c == '\b' || c == 127) {
