@@ -33,9 +33,19 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     init_fs();
     log_ok("Boot", "Initialized RamFS");
 
+    log_ok("Kernel", "Initialized all imortant systems");
+
+    log_info("Kernel", "Creating important files");
+
+    create_dir("/sysbin");
+    create_file("/sysbin/mount_shell");
+    
+    void (*mss)() = &mountshell_start;
+    set_file_callback("/sysbin/mount_shell", mss);
+
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
-    mountshell_start();
+    execute_file("/sysbin/mount_shell");
 
     //i686_IRQ_RegisterHandler(0, timer);
 

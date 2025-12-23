@@ -14,14 +14,9 @@ static void input_init(InputBuffer *buf) {
     buf->data = NULL;
     buf->size = 0;
     buf->capacity = 0;
-
-    log_debug("shell", "input buffer initialized");
 }
 
 static void input_grow(InputBuffer *buf, size_t new_capacity) {
-    log_debug("shell", "growing input buffer: %zu -> %zu",
-              buf->capacity, new_capacity);
-
     char *new_data = (char *)kmalloc(new_capacity);
     if (!new_data) {
         log_crit("shell", "kmalloc failed while growing input buffer");
@@ -49,7 +44,6 @@ static void input_push(InputBuffer *buf, char c) {
 
 static void input_pop(InputBuffer *buf) {
     if (buf->size == 0) {
-        log_warn("shell", "backspace on empty buffer");
         return;
     }
 
@@ -61,8 +55,6 @@ static void input_clear(InputBuffer *buf) {
     buf->size = 0;
     if (buf->data)
         buf->data[0] = '\0';
-
-    log_debug("shell", "input buffer cleared");
 }
 
 void mountshell_start() {
@@ -83,17 +75,12 @@ void mountshell_start() {
         char c = keyboard_getchar();
         if (c == 0)
             continue;
-
-        log_debug("shell", "key received: 0x%x", c);
-
+        
         if (c == '\n') {
             printf("\n");
 
             if (input.size > 0) {
-                log_info("shell", "command entered: '%s'", input.data);
                 /* TODO: parse + execute */
-            } else {
-                log_debug("shell", "empty command");
             }
 
             input_clear(&input);
