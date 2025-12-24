@@ -6,9 +6,10 @@
 #include <debug.h>
 #include <heap.h>
 #include <fs/fs.h>
-#include <input/keyboard/ps2.h>
-#include <apps/mountshell.h>
-#include <apps/bin/osfetch.h>
+#include <drivers/driverman.h>
+//#include <input/keyboard/ps2.h>
+//#include <apps/mountshell.h>
+//#include <apps/bin/osfetch.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -44,16 +45,18 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     create_dir("/bin");
     create_file("/bin/osfetch");
     
-    void (*mss)() = &mountshell_start;
-    set_file_callback("/sysbin/mount_shell", mss);
+    //void (*mss)() = &mountshell_start;
+    //set_file_callback("/sysbin/mount_shell", mss);
 
-    void (*osf)() = &osfetch_start;
-    set_file_callback("/bin/osfetch", osf);
+    //void (*osf)() = &osfetch_start;
+    //set_file_callback("/bin/osfetch", osf);
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
-    execute_file("/bin/osfetch");
-    execute_file("/sysbin/mount_shell");
+    drivers_init();
+
+    //execute_file("/bin/osfetch");
+    //execute_file("/sysbin/mount_shell");
 
     //i686_IRQ_RegisterHandler(0, timer);
 

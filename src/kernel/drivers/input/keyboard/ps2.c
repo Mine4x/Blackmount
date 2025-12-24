@@ -1,4 +1,4 @@
-#include <input/keyboard/ps2.h>
+#include <drivers/input/keyboard/ps2.h>
 #include <arch/i686/io.h>
 #include <arch/i686/irq.h>
 #include <debug.h>
@@ -45,6 +45,8 @@ static struct {
 static char keyboard_buffer[KEYBOARD_BUFFER_SIZE];
 static volatile uint32_t buffer_write_pos = 0;
 static volatile uint32_t buffer_read_pos = 0;
+
+void (*callback)();
 
 // Add character to buffer
 static void keyboard_buffer_push(char c) {
@@ -100,11 +102,12 @@ static void keyboard_irq_handler(Registers* regs) {
     // Add to buffer if it's a valid character
     if (c != 0) {
         keyboard_buffer_push(c);
+        callback(c);
     }
 }
 
 // Get character from buffer (returns 0 if empty)
-char keyboard_getchar(void) {
+char ps2_keyboard_getchar(void) {
     if (buffer_read_pos == buffer_write_pos) {
         return 0; // Buffer empty
     }
@@ -114,12 +117,12 @@ char keyboard_getchar(void) {
 }
 
 // Check if buffer has data
-bool keyboard_has_input(void) {
+bool ps2_keyboard_has_input(void) {
     return buffer_read_pos != buffer_write_pos;
 }
 
 // Initialize keyboard
-void keyboard_init(void) {
+void ps2_keyboard_init(void) {
     // Clear keyboard state
     keyboard_state.shift_pressed = false;
     keyboard_state.ctrl_pressed = false;
@@ -131,4 +134,8 @@ void keyboard_init(void) {
     
     // Register IRQ1 handler for keyboard
     i686_IRQ_RegisterHandler(1, keyboard_irq_handler);
+}
+
+void keyboard_bind(void (*ptr)()) {
+    callback = ptr;
 }

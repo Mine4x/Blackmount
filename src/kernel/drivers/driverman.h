@@ -1,0 +1,1 @@
+void drivers_init(void);
