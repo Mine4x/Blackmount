@@ -1,4 +1,3 @@
-#include <input/keyboard/ps2.h>
 #include <heap.h>
 #include <memory.h>
 #include <debug.h>
@@ -12,12 +11,6 @@
 #define MAX_ARGS 16
 #define MAX_PATH 256
 #define MAX_CACHE_ENTRIES 32
-
-typedef struct {
-    char *data;
-    size_t size;
-    size_t capacity;
-} InputBuffer;
 
 typedef struct {
     char cmd_name[64];
@@ -99,46 +92,6 @@ static int try_execute_from_bin(const char* cmd) {
 static int try_execute_from_pwd(const char* cmd) {
     /*TODO*/
     return 0;
-}
-
-static void input_init(InputBuffer *buf) {
-    buf->data = NULL;
-    buf->size = 0;
-    buf->capacity = 0;
-}
-
-static void input_grow(InputBuffer *buf, size_t new_capacity) {
-    char *new_data = (char *)kmalloc(new_capacity);
-    if (!new_data) {
-        log_crit("shell", "kmalloc failed while growing input buffer");
-        return;
-    }
-    if (buf->data) {
-        memcpy(new_data, buf->data, (uint16_t)buf->size);
-        kfree(buf->data);
-    }
-    buf->data = new_data;
-    buf->capacity = new_capacity;
-}
-
-static void input_push(InputBuffer *buf, char c) {
-    if (buf->size + 1 >= buf->capacity) {
-        size_t new_capacity = (buf->capacity == 0) ? 32 : buf->capacity * 2;
-        input_grow(buf, new_capacity);
-    }
-    buf->data[buf->size++] = c;
-    buf->data[buf->size] = '\0';
-}
-
-static void input_pop(InputBuffer *buf) {
-    if (buf->size == 0) return;
-    buf->size--;
-    buf->data[buf->size] = '\0';
-}
-
-static void input_clear(InputBuffer *buf) {
-    buf->size = 0;
-    if (buf->data) buf->data[0] = '\0';
 }
 
 typedef struct {
@@ -254,51 +207,49 @@ void buildin_mkdir(const char* path) {
     }
 }
 
-void mountshell_start() {
-    keyboard_init();
+void mountshell_start()
+{
     cache_init();
-    InputBuffer input;
-    input_init(&input);
-    printf("\x1b[36mMountshell v0.0.1\n");
+    printf("\x1b[36mMountshell v0.0.2\n");
     printf("\x1b[36mType 'help' or '?' for a list of commands\x1b[0m\n");
-    printf("\x1b[0m%s> ", PWD);
-    while (1) {
-        if (!keyboard_has_input()) continue;
-        char c = keyboard_getchar();
-        if (c == 0) continue;
-        if (c == '\n') {
-            printf("\n");
-            if (input.size > 0) {
-                Args args;
-                parse_args(input.data, &args);
-                if (args.argc > 0) {
-                    if (str_cmp(args.argv[0], "cd") == 0) {
-                        if (args.argc > 1) set_pwd(args.argv[1]);
-                        else printf("cd: missing argument\n");
-                    } else if (str_cmp(args.argv[0], "ls") == 0) {
-                        if (args.argc > 1) buildin_ls(args.argv[1]);
-                        else buildin_ls(PWD);
-                    } else if (str_cmp(args.argv[0], "help") == 0 || str_cmp(args.argv[0], "?") == 0) {
-                        printf("Available commands: cd, ls, help, ?, mkdir\n");
-                    } else if (str_cmp(args.argv[0], "mkdir") == 0) {
-                        if (args.argc > 1) buildin_mkdir(args.argv[1]);
-                    } else {
-                        // Try to execute from /bin before showing error
-                        if (!try_execute_from_bin(args.argv[0])) {
-                            printf("Unknown command: %s\n", args.argv[0]);
-                        }
-                    }
-                }
-            }
-            input_clear(&input);
-            printf("\x1b[0m%s> ", PWD);
+
+    while (1)
+    {
+        printf("\x1b[0m%s> ", PWD);
+
+        char* line = input_wait_and_get();
+        if (!line || line[0] == 0)
             continue;
-        }
-        if (c == '\b' || c == 127) {
-            if (input.size > 0) { input_pop(&input); VGA_backspace(); }
+
+        Args args;
+        parse_args(line, &args);
+
+        if (args.argc == 0)
             continue;
+
+        if (str_cmp(args.argv[0], "cd") == 0)
+        {
+            if (args.argc > 1) set_pwd(args.argv[1]);
+            else printf("cd: missing argument\n");
         }
-        input_push(&input, c);
-        printf("%c", c);
+        else if (str_cmp(args.argv[0], "ls") == 0)
+        {
+            if (args.argc > 1) buildin_ls(args.argv[1]);
+            else buildin_ls(PWD);
+        }
+        else if (str_cmp(args.argv[0], "help") == 0 || str_cmp(args.argv[0], "?") == 0)
+        {
+            printf("Available commands: cd, ls, help, ?, mkdir\n");
+        }
+        else if (str_cmp(args.argv[0], "mkdir") == 0)
+        {
+            if (args.argc > 1) buildin_mkdir(args.argv[1]);
+            else printf("mkdir: missing argument\n");
+        }
+        else
+        {
+            if (!try_execute_from_bin(args.argv[0]))
+                printf("Unknown command: %s\n", args.argv[0]);
+        }
     }
 }
