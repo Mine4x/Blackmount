@@ -4,8 +4,8 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-const unsigned SCREEN_WIDTH = 80;
-const unsigned SCREEN_HEIGHT = 25;
+const unsigned SCREEN_WIDTH = 80;//80
+const unsigned SCREEN_HEIGHT = 25;//25
 const uint8_t DEFAULT_COLOR = 0x7;
 
 uint8_t* g_ScreenBuffer = (uint8_t*)0xB8000;
@@ -214,6 +214,24 @@ void VGA_putc(char c)
     }
     if (g_ScreenY >= SCREEN_HEIGHT)
         VGA_scrollback(1);
+
+    VGA_setcursor(g_ScreenX, g_ScreenY);
+}
+
+void VGA_backspace()
+{
+    if (g_ScreenX == 0 && g_ScreenY == 0)
+        return;
+
+    if (g_ScreenX == 0) {
+        g_ScreenY--;
+        g_ScreenX = SCREEN_WIDTH - 1;
+    } else {
+        g_ScreenX--;
+    }
+
+    VGA_putchr(g_ScreenX, g_ScreenY, '\0');
+    VGA_putcolor(g_ScreenX, g_ScreenY, g_CurrentColor);
 
     VGA_setcursor(g_ScreenX, g_ScreenY);
 }
