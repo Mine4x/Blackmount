@@ -8,5 +8,6 @@
 void ps2_keyboard_init(void);
 char ps2_keyboard_getchar(void);
 bool ps2_keyboard_has_input(void);
+void ps2_keyboard_bind(void (*ptr)());
 
 #endif

@@ -136,6 +136,6 @@ void ps2_keyboard_init(void) {
     i686_IRQ_RegisterHandler(1, keyboard_irq_handler);
 }
 
-void keyboard_bind(void (*ptr)()) {
+void ps2_keyboard_bind(void (*ptr)()) {
     callback = ptr;
 }
