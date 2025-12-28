@@ -55,6 +55,13 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 
     drivers_init();
 
+    char name[64];
+
+    printf("Enter your name: ");
+    scanf("%s", name);
+
+    printf("\nHello, %s", name);
+
     //execute_file("/bin/osfetch");
     //execute_file("/sysbin/mount_shell");
 

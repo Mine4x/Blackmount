@@ -263,3 +263,98 @@ void debug_buffer(const char* msg, const void* buffer, uint32_t count)
 {
     fprint_buffer(VFS_FD_DEBUG, msg, buffer, count);
 }
+
+int vscanf(const char* fmt, va_list args)
+{
+    char* input = input_wait_and_get();
+    int assigned = 0;
+
+    while (*fmt && *input)
+    {
+        if (*fmt == '%')
+        {
+            fmt++;
+            switch (*fmt)
+            {
+                case 'c':
+                {
+                    char* out = va_arg(args, char*);
+                    *out = *input;
+                    input++;
+                    assigned++;
+                    break;
+                }
+
+                case 's':
+                {
+                    char* out = va_arg(args, char*);
+                    while (*input && *input != ' ')
+                    {
+                        *out++ = *input++;
+                    }
+                    *out = 0;
+                    if (*input == ' ')
+                        input++;
+                    assigned++;
+                    break;
+                }
+
+                case 'd':
+                case 'i':
+                {
+                    int* out = va_arg(args, int*);
+                    bool neg = false;
+                    int val = 0;
+
+                    if (*input == '-')
+                    {
+                        neg = true;
+                        input++;
+                    }
+
+                    while (*input >= '0' && *input <= '9')
+                    {
+                        val = val * 10 + (*input - '0');
+                        input++;
+                    }
+
+                    *out = neg ? -val : val;
+                    if (*input == ' ')
+                        input++;
+                    assigned++;
+                    break;
+                }
+
+                case 'u':
+                {
+                    unsigned int* out = va_arg(args, unsigned int*);
+                    unsigned int val = 0;
+
+                    while (*input >= '0' && *input <= '9')
+                    {
+                        val = val * 10 + (*input - '0');
+                        input++;
+                    }
+
+                    *out = val;
+                    if (*input == ' ')
+                        input++;
+                    assigned++;
+                    break;
+                }
+            }
+        }
+        fmt++;
+    }
+
+    return assigned;
+}
+
+int scanf(const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    int ret = vscanf(fmt, args);
+    va_end(args);
+    return ret;
+}

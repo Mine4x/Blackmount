@@ -59,6 +59,8 @@ static void input_clear(void) {
 }
 
 char* input_wait_and_get(void) {
+    set_print_c(true);
+
     while (1) {
         if (g_input_buffer.size > 0 && 
             g_input_buffer.data[g_input_buffer.size - 1] == '\n') {
@@ -72,6 +74,7 @@ char* input_wait_and_get(void) {
     if (!result) {
         log_crit("input", "kmalloc failed in input_wait_and_get");
         input_clear();
+        set_print_c(false);
         return NULL;
     }
     
@@ -80,6 +83,7 @@ char* input_wait_and_get(void) {
     
     input_clear();
     
+    set_print_c(false);
     return result;
 }
 

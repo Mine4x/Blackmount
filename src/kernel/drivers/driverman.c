@@ -17,12 +17,4 @@ void drivers_init(void) {
     log_info("Drivers", "Started Keyboard drivers");
     
     log_ok("Drivers", "All drivers started");
-
-    printf("Waiting\n");
-    char *x = input_wait_and_get();
-    printf("Waited\n");
-
-    printf("%s\n", x);
-
-    kfree(x);
 }
