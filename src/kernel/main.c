@@ -9,6 +9,7 @@
 #include <drivers/driverman.h>
 #include <apps/mountshell.h>
 #include <apps/bin/osfetch.h>
+#include <drivers/disk/ata.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -53,14 +54,9 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
     drivers_init();
-
-    char name[64];
-
-    printf("Enter your name: ");
-    scanf("%s", name);
-
-    printf("\nHello, %s", name);
     
+    test_ata();
+
     execute_file("/sysbin/mount_shell");
 
     //i686_IRQ_RegisterHandler(0, timer);

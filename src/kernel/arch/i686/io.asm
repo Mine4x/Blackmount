@@ -38,3 +38,16 @@ crash_me:
     ; div eax
     int 0x80
     ret
+
+global i686_inw
+i686_inw:
+    mov dx, [esp + 4]
+    in ax, dx
+    ret
+
+global i686_outw
+i686_outw:
+    mov dx, [esp + 4]
+    mov ax, [esp + 8]
+    out dx, ax
+    ret
