@@ -11,6 +11,8 @@
 #include <apps/bin/osfetch.h>
 #include <drivers/disk/ata.h>
 #include <timer/timer.h>
+#include <arch/i686/paging.h>
+#include <arch/i686/pagefault.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -43,6 +45,14 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 
     log_ok("Kernel", "Initialized all imortant systems");
 
+    log_warn("Kernel", "Initializing EXPERIMENTAL features");
+    log_info("Kernel", "Starting Paging");
+    paging_init();
+    log_info("Kernel", "Starting Pagefault handler");
+    i686_PageFault_Initialize();
+    log_info("Kernel", "Starting ATA");
+    ata_init();
+
     log_info("Kernel", "Creating important files");
 
     create_dir("/sysbin");
@@ -58,22 +68,8 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     set_file_callback("/bin/osfetch", osf);
 
     log_ok("Kernel", "Created all important files");
-
-    log_warn("Kernel", "Starting EXPERIMENTAL features");
-    log_info("Kernel", "Starting ATA");
-
-    ata_init();
-
-    uint8_t buffer[512 * 8];
-    ata_read_sectors(0, 0, 100, 8, buffer);
-
-    ata_write_sectors(1, 1, 200, 4, buffer);
-
-    ata_flush_cache(0,0);
-
-    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
     
-    test_ata();
+    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
     execute_file("/sysbin/mount_shell");
 
