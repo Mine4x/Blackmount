@@ -10,6 +10,7 @@
 #include <apps/mountshell.h>
 #include <apps/bin/osfetch.h>
 #include <drivers/disk/ata.h>
+#include <timer/timer.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -35,6 +36,11 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     init_fs();
     log_ok("Boot", "Initialized RamFS");
 
+    timer_init();
+    log_ok("Boot","Initet timer");
+
+    drivers_init();
+
     log_ok("Kernel", "Initialized all imortant systems");
 
     log_info("Kernel", "Creating important files");
@@ -51,9 +57,21 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     void (*osf)() = &osfetch_start;
     set_file_callback("/bin/osfetch", osf);
 
-    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
+    log_ok("Kernel", "Created all important files");
 
-    drivers_init();
+    log_warn("Kernel", "Starting EXPERIMENTAL features");
+    log_info("Kernel", "Starting ATA");
+
+    ata_init();
+
+    uint8_t buffer[512 * 8];
+    ata_read_sectors(0, 0, 100, 8, buffer);
+
+    ata_write_sectors(1, 1, 200, 4, buffer);
+
+    ata_flush_cache(0,0);
+
+    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
     
     test_ata();
 
