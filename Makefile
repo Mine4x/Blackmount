@@ -23,6 +23,34 @@ $(BUILD_DIR)/main_floppy.img: bootloader kernel
 	@echo "--> Created: " $@
 
 #
+# ISO Image
+#
+iso_image: $(BUILD_DIR)/main_cd.iso
+
+$(BUILD_DIR)/main_cd.iso: bootloader kernel
+	@mkdir -p $(BUILD_DIR)/iso_root
+	@cp $(BUILD_DIR)/stage2.bin $(BUILD_DIR)/iso_root/
+	@cp $(BUILD_DIR)/kernel.bin $(BUILD_DIR)/iso_root/
+	@cp test.txt $(BUILD_DIR)/iso_root/
+	@mkdir -p $(BUILD_DIR)/iso_root/mydir
+	@cp test.txt $(BUILD_DIR)/iso_root/mydir/
+
+	@cp $(BUILD_DIR)/stage1.bin $(BUILD_DIR)/iso_root/stage1.bin
+
+	@xorriso -as mkisofs \
+		-quiet \
+		-R \
+		-o $@ \
+		-isohybrid-mbr $(BUILD_DIR)/stage1.bin \
+		-b stage1.bin \
+		-no-emul-boot \
+		-boot-load-size 1 \
+		-boot-info-table \
+		$(BUILD_DIR)/iso_root
+
+
+
+#
 # Bootloader
 #
 bootloader: stage1 stage2
