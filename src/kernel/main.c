@@ -5,20 +5,16 @@
 #include <arch/i686/irq.h>
 #include <debug.h>
 #include <heap.h>
-#include <fs/fs.h>
+#include <drivers/fs/ramdisk.h>
 #include <drivers/driverman.h>
-#include <apps/mountshell.h>
-#include <apps/bin/osfetch.h>
+#include <drivers/disk/ata.h>
+#include <timer/timer.h>
+#include <arch/i686/paging.h>
+#include <arch/i686/pagefault.h>
+#include <proc/proc.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
-
-void crash_me();
-
-void timer(Registers* regs)
-{
-    printf(".");
-}
 
 void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 {
@@ -31,41 +27,36 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     init_heap();
     log_ok("Boot", "Initialized Heap");
 
-    init_fs();
-    log_ok("Boot", "Initialized RamFS");
+    ramdisk_init_fs();
+    log_ok("Boot", "Initialized Ramdisk");
 
-    log_ok("Kernel", "Initialized all imortant systems");
-
-    log_info("Kernel", "Creating important files");
-
-    create_dir("/sysbin");
-    create_file("/sysbin/mount_shell");
-
-    create_dir("/bin");
-    create_file("/bin/osfetch");
-    
-    void (*mss)() = &mountshell_start;
-    set_file_callback("/sysbin/mount_shell", mss);
-
-    void (*osf)() = &osfetch_start;
-    set_file_callback("/bin/osfetch", osf);
-
-    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
+    timer_init();
+    log_ok("Boot", "Initialized timer");
 
     drivers_init();
 
-    char name[64];
+    log_ok("Kernel", "Initialized all imortant systems");
 
-    printf("Enter your name: ");
-    scanf("%s", name);
+    log_warn("Kernel", "Initializing EXPERIMENTAL features");
+    log_info("Kernel", "Starting Paging");
+    paging_init();
+    log_info("Kernel", "Starting Pagefault handler");
+    i686_PageFault_Initialize();
+    log_info("Kernel", "Starting ATA");
+    ata_init();
+    log_info("Kernel", "Starting Proc");
+    proc_init();
 
-    printf("\nHello, %s", name);
+    log_info("Kernel", "Creating important files");
+
+    ramdisk_create_dir("/sysbin");
+    ramdisk_create_dir("/bin");
+
+    log_ok("Kernel", "Created all important files");
     
-    execute_file("/sysbin/mount_shell");
+    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
-    //i686_IRQ_RegisterHandler(0, timer);
-
-    //crash_me();
+    proc_start_scheduling();
 
 end:
     for (;;);

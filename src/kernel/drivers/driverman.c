@@ -1,13 +1,13 @@
 #include <drivers/driverman.h>
 #include <debug.h>
 #include <drivers/input/keyboard/ps2.h>
-#include <drivers/input/input.h>
 #include <heap.h>
+#include <stdio.h>
 
 // TODO: Should scan for devices an load drivers but wont be implemented for now
 
 static void input_keyboard_binding(char c) {
-    handle_input(c);
+    printf("%c", c);
 }
 
 void drivers_init(void) {

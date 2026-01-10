@@ -1,3 +1,5 @@
+// Right now all the fs files are for compatibilty only while developing the new fs
+
 #ifndef FS_H
 #define FS_H
 

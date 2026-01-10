@@ -3,6 +3,7 @@
 #include "stdio.h"
 #include "debug.h"
 #include "string.h"
+#include <proc/proc.h>
 
 #define FS_MODULE "FS"
 
