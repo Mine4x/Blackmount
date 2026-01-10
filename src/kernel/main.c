@@ -5,7 +5,7 @@
 #include <arch/i686/irq.h>
 #include <debug.h>
 #include <heap.h>
-#include <fs/fs.h>
+#include <drivers/fs/ramdisk.h>
 #include <drivers/driverman.h>
 #include <drivers/disk/ata.h>
 #include <timer/timer.h>
@@ -27,8 +27,8 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     init_heap();
     log_ok("Boot", "Initialized Heap");
 
-    init_fs();
-    log_ok("Boot", "Initialized RamFS");
+    ramdisk_init_fs();
+    log_ok("Boot", "Initialized Ramdisk");
 
     timer_init();
     log_ok("Boot", "Initialized timer");
@@ -49,8 +49,8 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 
     log_info("Kernel", "Creating important files");
 
-    create_dir("/sysbin");
-    create_dir("/bin");
+    ramdisk_create_dir("/sysbin");
+    ramdisk_create_dir("/bin");
 
     log_ok("Kernel", "Created all important files");
     

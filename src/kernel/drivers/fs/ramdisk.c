@@ -1,21 +1,57 @@
+#include "memory.h"
+#include "stdio.h"
+#include "debug.h"
+#include "string.h"
 #include "ramdisk.h"
-#include <drivers/fs/fs.h>
-#include <debug.h>
-#include <heap.h>
-#include <string.h>
-#include <memory.h>
+#include <proc/proc.h>
 
-#define MODULE "RamDisk"
+#define FS_MODULE "RamDisk"
 
-static FSNode_t* root = 0;
+extern void* kmalloc(unsigned int size);
+extern void kfree(void* ptr);
 
-int ramdisk_init() {
-    root = (FSNode_t*)kmalloc(sizeof(FSNode_t));
+#define MAX_NAME 256
+#define MAX_CHILDREN 64
+#define MAX_DATA 4096
+
+#define FS_SUCCESS 0
+#define FS_ERROR -1
+#define FS_EXISTS -2
+#define FS_NOT_FOUND -3
+#define FS_INVALID_PARAM -4
+#define FS_NOT_DIR -5
+#define FS_NOT_FILE -6
+#define FS_DIR_FULL -7
+#define FS_DIR_NOT_EMPTY -8
+#define FS_NO_EXEC -9
+
+typedef struct FSNode FSNode;
+
+struct FSNode {
+    char name[MAX_NAME];
+    int is_dir;
+    FileFlags flags;
+    FSNode* parent;
+    
+    FSNode* children[MAX_CHILDREN];
+    int child_count;
+    
+    char data[MAX_DATA];
+    int data_size;
+    void (*callback)(void);
+};
+
+static FSNode* root = 0;
+
+void ramdisk_init_fs() {
+    log_info(FS_MODULE, "Initializing filesystem");
+    
+    root = (FSNode*)kmalloc(sizeof(FSNode));
     if (!root) {
-        log_err(MODULE, "Failed to allocate root node");
-        return -1;
+        log_crit(FS_MODULE, "Failed to allocate root node");
+        return;
     }
-
+    
     str_cpy(root->name, "/");
     root->is_dir = 1;
     root->flags = 0;
@@ -24,18 +60,18 @@ int ramdisk_init() {
     root->data_size = 0;
     root->callback = 0;
     memset(root->children, 0, sizeof(root->children));
-
-    return -2;
+    
+    log_ok(FS_MODULE, "Filesystem initialized successfully");
 }
 
-static FSNode_t* ramdisk_find_node(const char* path, FSNode_t** parent_out) {
+static FSNode* ramdisk_find_node(const char* path, FSNode** parent_out) {
     if (!root) {
-        log_err(MODULE, "Filesystem not initialized");
+        log_err(FS_MODULE, "Filesystem not initialized");
         return 0;
     }
     
     if (!path || path[0] != '/') {
-        log_err(MODULE, "Invalid path: %s", path ? path : "(null)");
+        log_err(FS_MODULE, "Invalid path: %s", path ? path : "(null)");
         return 0;
     }
     
@@ -44,8 +80,8 @@ static FSNode_t* ramdisk_find_node(const char* path, FSNode_t** parent_out) {
         return root;
     }
     
-    FSNode_t* cur = root;
-    FSNode_t* parent = 0;
+    FSNode* cur = root;
+    FSNode* parent = 0;
     int start = 1;
     
     while (path[start]) {
@@ -60,7 +96,7 @@ static FSNode_t* ramdisk_find_node(const char* path, FSNode_t** parent_out) {
         
         int found = 0;
         for (int i = 0; i < cur->child_count; i++) {
-            FSNode_t* child = cur->children[i];
+            FSNode* child = cur->children[i];
             int match = 1;
             for (int j = 0; j < len; j++) {
                 if (child->name[j] != path[start + j]) {
@@ -89,7 +125,7 @@ static FSNode_t* ramdisk_find_node(const char* path, FSNode_t** parent_out) {
     return cur;
 }
 
-static void ramdisk_get_basename(const char* path, char* out) {
+static void get_basename(const char* path, char* out) {
     int len = str_len(path);
     int i = len - 1;
     
@@ -108,34 +144,34 @@ static void ramdisk_get_basename(const char* path, char* out) {
 
 int ramdisk_create_dir(const char* path) {
     if (!root || !path) {
-        log_err(MODULE, "Invalid parameters for ramdisk_create_dir");
+        log_err(FS_MODULE, "Invalid parameters for ramdisk_create_dir");
         return FS_INVALID_PARAM;
     }
     
-    FSNode_t* parent = 0;
-    FSNode_t* existing = ramdisk_find_node(path, &parent);
+    FSNode* parent = 0;
+    FSNode* existing = ramdisk_find_node(path, &parent);
     
     if (existing) {
-        return ramdisk_exists;
+        return FS_EXISTS;
     }
     
     if (!parent) {
-        log_err(MODULE, "Parent directory not found for: %s", path);
+        log_err(FS_MODULE, "Parent directory not found for: %s", path);
         return FS_NOT_FOUND;
     }
     
     if (parent->child_count >= MAX_CHILDREN) {
-        log_err(MODULE, "Parent directory full (max %d children)", MAX_CHILDREN);
+        log_err(FS_MODULE, "Parent directory full (max %d children)", MAX_CHILDREN);
         return FS_DIR_FULL;
     }
     
-    FSNode_t* new_dir = (FSNode_t*)kmalloc(sizeof(FSNode_t));
+    FSNode* new_dir = (FSNode*)kmalloc(sizeof(FSNode));
     if (!new_dir) {
-        log_crit(MODULE, "Failed to allocate memory for directory");
+        log_crit(FS_MODULE, "Failed to allocate memory for directory");
         return FS_ERROR;
     }
     
-    ramdisk_get_basename(path, new_dir->name);
+    get_basename(path, new_dir->name);
     new_dir->is_dir = 1;
     new_dir->flags = 0;
     new_dir->parent = parent;
@@ -150,20 +186,20 @@ int ramdisk_create_dir(const char* path) {
 }
 
 int ramdisk_get_dir_cont(const char* path, char* buffer, int max_size) {
-    FSNode_t* node = ramdisk_find_node(path, 0);
+    FSNode* node = ramdisk_find_node(path, 0);
     if (!node) {
-        log_err(MODULE, "Directory not found: %s", path);
+        log_err(FS_MODULE, "Directory not found: %s", path);
         return FS_NOT_FOUND;
     }
     
     if (!node->is_dir) {
-        log_err(MODULE, "Not a directory: %s", path);
+        log_err(FS_MODULE, "Not a directory: %s", path);
         return FS_NOT_DIR;
     }
     
     int offset = 0;
     for (int i = 0; i < node->child_count; i++) {
-        FSNode_t* child = node->children[i];
+        FSNode* child = node->children[i];
         int name_len = str_len(child->name);
         int suffix_len = child->is_dir ? 2 : 1;  // "/" or "\n"
         
@@ -191,26 +227,26 @@ int ramdisk_get_dir_cont(const char* path, char* buffer, int max_size) {
 }
 
 int ramdisk_delete_dir(const char* path) {
-    FSNode_t* parent = 0;
-    FSNode_t* node = ramdisk_find_node(path, &parent);
+    FSNode* parent = 0;
+    FSNode* node = ramdisk_find_node(path, &parent);
     
     if (!node) {
-        log_err(MODULE, "Directory not found: %s", path);
+        log_err(FS_MODULE, "Directory not found: %s", path);
         return FS_NOT_FOUND;
     }
     
     if (!node->is_dir) {
-        log_err(MODULE, "Not a directory: %s", path);
+        log_err(FS_MODULE, "Not a directory: %s", path);
         return FS_NOT_DIR;
     }
     
     if (node == root) {
-        log_err(MODULE, "Cannot delete root directory");
+        log_err(FS_MODULE, "Cannot delete root directory");
         return FS_ERROR;
     }
     
     if (node->child_count > 0) {
-        log_err(MODULE, "Directory not empty: %s (%d items)", path, node->child_count);
+        log_err(FS_MODULE, "Directory not empty: %s (%d items)", path, node->child_count);
         return FS_DIR_NOT_EMPTY;
     }
     
@@ -230,34 +266,34 @@ int ramdisk_delete_dir(const char* path) {
 
 int ramdisk_create_file(const char* path) {
     if (!root || !path) {
-        log_err(MODULE, "Invalid parameters for ramdisk_create_file");
+        log_err(FS_MODULE, "Invalid parameters for ramdisk_create_file");
         return FS_INVALID_PARAM;
     }
     
-    FSNode_t* parent = 0;
-    FSNode_t* existing = ramdisk_find_node(path, &parent);
+    FSNode* parent = 0;
+    FSNode* existing = ramdisk_find_node(path, &parent);
     
     if (existing) {
-        return ramdisk_exists;
+        return FS_EXISTS;
     }
     
     if (!parent || !parent->is_dir) {
-        log_err(MODULE, "Parent directory not found for: %s", path);
+        log_err(FS_MODULE, "Parent directory not found for: %s", path);
         return FS_NOT_FOUND;
     }
     
     if (parent->child_count >= MAX_CHILDREN) {
-        log_err(MODULE, "Parent directory full (max %d children)", MAX_CHILDREN);
+        log_err(FS_MODULE, "Parent directory full (max %d children)", MAX_CHILDREN);
         return FS_DIR_FULL;
     }
     
-    FSNode_t* new_file = (FSNode_t*)kmalloc(sizeof(FSNode_t));
+    FSNode* new_file = (FSNode*)kmalloc(sizeof(FSNode));
     if (!new_file) {
-        log_crit(MODULE, "Failed to allocate memory for file");
+        log_crit(FS_MODULE, "Failed to allocate memory for file");
         return FS_ERROR;
     }
     
-    ramdisk_get_basename(path, new_file->name);
+    get_basename(path, new_file->name);
     new_file->is_dir = 0;
     new_file->flags = EXECUTABLE;
     new_file->parent = parent;
@@ -272,14 +308,14 @@ int ramdisk_create_file(const char* path) {
 }
 
 int ramdisk_execute_file(const char* path) {
-    FSNode_t* node = ramdisk_find_node(path, 0);
+    FSNode* node = ramdisk_find_node(path, 0);
     if (!node) {
-        log_err(MODULE, "File not found: %s", path);
+        log_err(FS_MODULE, "File not found: %s", path);
         return FS_NOT_FOUND;
     }
     
     if (node->is_dir) {
-        log_err(MODULE, "Cannot execute directory: %s", path);
+        log_err(FS_MODULE, "Cannot execute directory: %s", path);
         return FS_NOT_FILE;
     }
     
@@ -291,27 +327,27 @@ int ramdisk_execute_file(const char* path) {
         exec();
         return FS_SUCCESS;
     } else {
-        log_err(MODULE, "File has no executable content: %s", path);
+        log_err(FS_MODULE, "File has no executable content: %s", path);
         return FS_NO_EXEC;
     }
 }
 
 int ramdisk_delete_file(const char* path) {
-    FSNode_t* parent = 0;
-    FSNode_t* node = ramdisk_find_node(path, &parent);
+    FSNode* parent = 0;
+    FSNode* node = ramdisk_find_node(path, &parent);
     
     if (!node) {
-        log_err(MODULE, "File not found: %s", path);
+        log_err(FS_MODULE, "File not found: %s", path);
         return FS_NOT_FOUND;
     }
     
     if (node->is_dir) {
-        log_err(MODULE, "Cannot delete directory as file: %s", path);
+        log_err(FS_MODULE, "Cannot delete directory as file: %s", path);
         return FS_NOT_DIR;
     }
     
     if (!parent) {
-        log_err(MODULE, "Cannot delete file without parent");
+        log_err(FS_MODULE, "Cannot delete file without parent");
         return FS_ERROR;
     }
     
@@ -330,14 +366,14 @@ int ramdisk_delete_file(const char* path) {
 }
 
 int ramdisk_write_file(const char* path, const char* data, int size) {
-    FSNode_t* node = ramdisk_find_node(path, 0);
+    FSNode* node = ramdisk_find_node(path, 0);
     if (!node) {
-        log_err(MODULE, "File not found: %s", path);
+        log_err(FS_MODULE, "File not found: %s", path);
         return FS_NOT_FOUND;
     }
     
     if (node->is_dir) {
-        log_err(MODULE, "Cannot write to directory: %s", path);
+        log_err(FS_MODULE, "Cannot write to directory: %s", path);
         return FS_NOT_FILE;
     }
     
@@ -349,14 +385,14 @@ int ramdisk_write_file(const char* path, const char* data, int size) {
 }
 
 int ramdisk_set_file_callback(const char* path, void (*callback)(void)) {
-    FSNode_t* node = ramdisk_find_node(path, 0);
+    FSNode* node = ramdisk_find_node(path, 0);
     if (!node) {
-        log_err(MODULE, "File not found: %s", path);
+        log_err(FS_MODULE, "File not found: %s", path);
         return FS_NOT_FOUND;
     }
     
     if (node->is_dir) {
-        log_err(MODULE, "Cannot set callback on directory: %s", path);
+        log_err(FS_MODULE, "Cannot set callback on directory: %s", path);
         return FS_NOT_DIR;
     }
     
@@ -366,14 +402,14 @@ int ramdisk_set_file_callback(const char* path, void (*callback)(void)) {
 }
 
 int ramdisk_read_file(const char* path, char* buffer, int max_size) {
-    FSNode_t* node = ramdisk_find_node(path, 0);
+    FSNode* node = ramdisk_find_node(path, 0);
     if (!node) {
-        log_err(MODULE, "File not found: %s", path);
+        log_err(FS_MODULE, "File not found: %s", path);
         return FS_NOT_FOUND;
     }
     
     if (node->is_dir) {
-        log_err(MODULE, "Cannot read directory: %s", path);
+        log_err(FS_MODULE, "Cannot read directory: %s", path);
         return FS_NOT_FILE;
     }
     
@@ -383,23 +419,23 @@ int ramdisk_read_file(const char* path, char* buffer, int max_size) {
 }
 
 // Returns 1 if the path exists, 0 otherwise
-int ramdisk_exists(const char* path) {
-    FSNode_t* node = ramdisk_find_node(path, 0);
+int ramdisk_fs_exists(const char* path) {
+    FSNode* node = ramdisk_find_node(path, 0);
     return node ? 1 : 0;
 }
 
 // Returns 1 if the path exists and is a directory, 0 otherwise
-int ramdisk_is_dir(const char* path) {
-    FSNode_t* node = ramdisk_find_node(path, 0);
+int ramdisk_fs_is_dir(const char* path) {
+    FSNode* node = ramdisk_find_node(path, 0);
     return (node && node->is_dir) ? 1 : 0;
 }
 
 // Returns 1 if the path exists and is a file, 0 otherwise
-int ramdisk_is_file(const char* path) {
-    FSNode_t* node = ramdisk_find_node(path, 0);
+int ramdisk_fs_is_file(const char* path) {
+    FSNode* node = ramdisk_find_node(path, 0);
     return (node && !node->is_dir) ? 1 : 0;
 }
 
-int ramdisk_is_exec(const char* path) {
+int ramdisk_fs_is_exec(const char* path) {
     return 1; /*TODO*/
 }
