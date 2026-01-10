@@ -1,1 +1,0 @@
-void osfetch_start();

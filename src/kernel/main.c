@@ -7,22 +7,14 @@
 #include <heap.h>
 #include <fs/fs.h>
 #include <drivers/driverman.h>
-#include <apps/mountshell.h>
-#include <apps/bin/osfetch.h>
 #include <drivers/disk/ata.h>
 #include <timer/timer.h>
 #include <arch/i686/paging.h>
 #include <arch/i686/pagefault.h>
+#include <proc/proc.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
-
-void crash_me();
-
-void timer(Registers* regs)
-{
-    printf(".");
-}
 
 void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 {
@@ -39,7 +31,7 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     log_ok("Boot", "Initialized RamFS");
 
     timer_init();
-    log_ok("Boot","Initet timer");
+    log_ok("Boot", "Initialized timer");
 
     drivers_init();
 
@@ -52,30 +44,19 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     i686_PageFault_Initialize();
     log_info("Kernel", "Starting ATA");
     ata_init();
+    log_info("Kernel", "Starting Proc");
+    proc_init();
 
     log_info("Kernel", "Creating important files");
 
     create_dir("/sysbin");
-    create_file("/sysbin/mount_shell");
-
     create_dir("/bin");
-    create_file("/bin/osfetch");
-    
-    void (*mss)() = &mountshell_start;
-    set_file_callback("/sysbin/mount_shell", mss);
-
-    void (*osf)() = &osfetch_start;
-    set_file_callback("/bin/osfetch", osf);
 
     log_ok("Kernel", "Created all important files");
     
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
-    execute_file("/sysbin/mount_shell");
-
-    //i686_IRQ_RegisterHandler(0, timer);
-
-    //crash_me();
+    proc_start_scheduling();
 
 end:
     for (;;);

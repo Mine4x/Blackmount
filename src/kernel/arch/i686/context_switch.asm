@@ -1,52 +1,64 @@
+; context_switch.asm - Context switching for i686
+[bits 32]
+
 global context_switch
 
-; void context_switch(uint32_t** old_esp, uint32_t* new_esp)
-; Arguments:
-;   [esp+4] = pointer to old task's ESP storage location
-;   [esp+8] = new task's ESP value to load
+; void context_switch(Context* old_ctx, Context* new_ctx)
+; Context layout (offsets):
+;   0: eax, 4: ebx, 8: ecx, 12: edx
+;   16: esi, 20: edi, 24: esp, 28: ebp
+;   32: eip, 36: eflags
+
 context_switch:
-    ; Save current task's context
-    pushad                  ; Push all general purpose registers (EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI)
-    pushfd                  ; Push EFLAGS register
+    push ebp
+    mov ebp, esp
+    pushfd              ; Save flags first
     
-    ; Get arguments
-    mov eax, [esp + 36]     ; old_esp (36 = 32 bytes from pushad + 4 bytes from pushfd)
-    mov ecx, [esp + 40]     ; new_esp
+    ; Save all registers to old context
+    mov eax, [ebp+8]    ; Get old_ctx pointer
     
-    ; Save old ESP
-    mov [eax], esp          ; Store current ESP to *old_esp
+    mov [eax+4], ebx    ; Save EBX
+    mov [eax+8], ecx    ; Save ECX
+    mov [eax+12], edx   ; Save EDX
+    mov [eax+16], esi   ; Save ESI
+    mov [eax+20], edi   ; Save EDI
     
-    ; Switch to new task's stack
-    mov esp, ecx            ; Load new ESP
+    ; Save ESP (before we pushed ebp and flags)
+    mov ecx, ebp
+    add ecx, 12         ; Skip return address, old ebp, and our args
+    mov [eax+24], ecx   ; Save ESP
     
-    ; Restore new task's context
-    popfd                   ; Restore EFLAGS
-    popad                   ; Restore all general purpose registers
+    mov ecx, [ebp]      ; Get caller's EBP
+    mov [eax+28], ecx   ; Save EBP
     
-    ret                     ; Return to new task
-
-
-; uint32_t* setup_task_stack(void* stack_top, void (*entry_point)(void))
-global setup_task_stack
-setup_task_stack:
-    mov eax, [esp + 4]      ; stack_top
-    mov ecx, [esp + 8]      ; entry_point
+    ; Save return address as EIP
+    mov ecx, [ebp+4]    ; Get return address
+    mov [eax+32], ecx   ; Save EIP
     
-    ; Setup stack as if task was interrupted
-    sub eax, 4
-    mov dword [eax], 0x202  ; EFLAGS (IF=1, reserved bit=1)
+    ; Save EFLAGS
+    pop ecx             ; Get flags we pushed earlier
+    mov [eax+36], ecx   ; Save EFLAGS
     
-    sub eax, 32             ; Space for pushad (8 registers * 4 bytes)
-    mov dword [eax + 28], ecx  ; Set saved EIP to entry_point
+    ; Now restore new context
+    mov eax, [ebp+12]   ; Get new_ctx pointer
     
-    ; Zero out other registers
-    mov dword [eax], 0      ; EDI
-    mov dword [eax + 4], 0  ; ESI
-    mov dword [eax + 8], 0  ; EBP
-    ; [eax + 12] is ESP (ignored by popad)
-    mov dword [eax + 16], 0 ; EBX
-    mov dword [eax + 20], 0 ; EDX
-    mov dword [eax + 24], 0 ; ECX
-    ; [eax + 28] is EAX (already set to entry_point)
+    ; Restore registers
+    mov ebx, [eax+4]    ; Restore EBX
+    mov ecx, [eax+8]    ; Restore ECX
+    mov edx, [eax+12]   ; Restore EDX
+    mov esi, [eax+16]   ; Restore ESI
+    mov edi, [eax+20]   ; Restore EDI
     
-    ret                     ; Return stack pointer in EAX
+    ; Restore ESP and EBP
+    mov esp, [eax+24]   ; Restore ESP
+    mov ebp, [eax+28]   ; Restore EBP
+    
+    ; Restore EFLAGS
+    push dword [eax+36]
+    popfd
+    
+    ; Jump to new EIP
+    push dword [eax+32] ; Push new EIP as return address
+    mov eax, [eax+0]    ; Restore EAX last
+    
+    ret                 ; Jump to new EIP
