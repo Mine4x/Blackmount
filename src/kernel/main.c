@@ -12,6 +12,7 @@
 #include <arch/i686/paging.h>
 #include <arch/i686/pagefault.h>
 #include <proc/proc.h>
+#include <drivers/disk/floppy.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -46,6 +47,8 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     ata_init();
     log_info("Kernel", "Starting Proc");
     proc_init();
+    log_info("Kernel", "Starting FDC");
+    floppy_init();
 
     log_info("Kernel", "Creating important files");
 
