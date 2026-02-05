@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 size_t strlen(const char* str);
-char* strcpy(char* dst, const char* src);
+void strcpy(char* dst, const char* src);
 int strcmp(const char* a, const char* b);
 
 #endif

@@ -56,7 +56,9 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     ramdisk_create_dir("/bin");
 
     log_ok("Kernel", "Created all important files");
-    
+   
+    log_warn("Kernel", "If you are looking for the shell, it was removed in an older update since a shell doesn't really belong in a Kernel");
+
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
     proc_start_scheduling();
