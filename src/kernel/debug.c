@@ -32,9 +32,11 @@ void logf(const char* module, DebugLevel level, const char* fmt, ...)
     fputs(g_ColorReset, VFS_FD_DEBUG);
     fputc('\n', VFS_FD_DEBUG);
     
-    printf("%s[%s] ", g_LogSeverityColors[level], module);
-    printf(fmt, args_copy);
-    printf("%s\n", g_ColorReset);
+    fputs(g_LogSeverityColors[level], VFS_FD_STDOUT);
+    fprintf(VFS_FD_STDOUT, "[%s] ", module);
+    vfprintf(VFS_FD_STDOUT, fmt, args_copy);
+    fputs(g_ColorReset, VFS_FD_STDOUT);
+    fputc('\n', VFS_FD_STDOUT);
     
     va_end(args);
     va_end(args_copy);

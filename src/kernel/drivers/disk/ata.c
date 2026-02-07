@@ -3,6 +3,8 @@
 #include <debug.h>
 #include <drivers/disk/ata.h>
 #include <arch/i686/io.h>
+#include <block/block.h>
+#include <block/block_ata.h>
 
 // ATA bus definitions
 #define ATA_PRIMARY_IO      0x1F0
@@ -483,6 +485,32 @@ void ata_read_sector(uint32_t lba, uint8_t* buffer) {
 
 void ata_write_sector(uint32_t lba, uint8_t* buffer) {
     ata_write_sectors(0, 0, lba, 1, buffer);  // Primary master
+}
+
+block_device_t* ata_create_primary_blockdev() {
+    // Check if primary master exists
+    ata_device_t* dev = ata_get_device(0, 0);
+    if (!dev) {
+        log_err("ATA", "No primary master device available");
+        return NULL;
+    }
+    
+    log_info("ATA", "Creating block device for primary master: %s", dev->model);
+    
+    block_device_t* blockdev = ata_create_blockdev(
+        "hda",           // name
+        0,               // bus (primary)
+        0,               // drive (master)
+        dev->sector_count // sectors
+    );
+    
+    if (blockdev) {
+        log_ok("ATA", "Block device 'hda' created successfully");
+    } else {
+        log_err("ATA", "Failed to create block device");
+    }
+    
+    return blockdev;
 }
 
 void test_ata() {

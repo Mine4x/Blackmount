@@ -13,9 +13,42 @@
 #include <arch/i686/pagefault.h>
 #include <proc/proc.h>
 #include <drivers/disk/floppy.h>
+#include <block/block.h>
+#include <drivers/fs/fat/fat.h>
+#include <block/block_floppy.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
+
+void test1() {
+    block_device_t* hda = ata_create_primary_blockdev();
+    fat_fs_t* hda_fat = NULL;
+    if(hda) {
+        hda_fat = fat_mount(hda);
+    }
+    fat_file_t test;
+    fat_open(hda_fat, "test.txt", &test);
+    uint32_t file_size = 1024;
+    char* buffer = kmalloc(file_size + 1);
+    fat_read(&test, buffer, file_size);
+    printf("%s\n", buffer);
+    kfree(buffer);
+}
+
+void test2(uint16_t bootDrive) {
+    block_device_t* fda = floppy_create_blockdev("fda", bootDrive);
+    fat_fs_t* fda_fat = NULL;
+    if (fda) {
+        fda_fat = fat_mount(fda);
+    }
+    fat_file_t test;
+    fat_open(fda_fat, "test.txt", &test);
+    uint32_t file_size = 1024;
+    char* buffer = kmalloc(file_size + 1);
+    fat_read(&test, buffer, file_size);
+    printf("%s\n", buffer);
+    kfree(buffer);
+}
 
 void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 {
@@ -60,6 +93,9 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     log_warn("Kernel", "If you are looking for the shell, it was removed in an older update since a shell doesn't really belong in a Kernel");
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
+
+    test1();
+    test2(bootDrive);
 
     proc_start_scheduling();
 
