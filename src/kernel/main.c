@@ -16,6 +16,7 @@
 #include <block/block.h>
 #include <drivers/fs/fat/fat.h>
 #include <block/block_floppy.h>
+#include <config/config.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -52,6 +53,11 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     proc_init();
     log_info("Kernel", "Starting FDC");
     floppy_init();
+    log_info("Kernel", "Mounting Floppy bootdrive");
+    block_device_t* boot_block = floppy_create_blockdev("boot", bootDrive);
+    fat_fs_t* boot_fs = fat_mount(boot_block);
+    log_info("Kernel", "Loading Config from boot drive");
+    loadConfig(boot_fs);
 
     log_info("Kernel", "Creating important files");
 

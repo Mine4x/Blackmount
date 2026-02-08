@@ -20,6 +20,8 @@ $(BUILD_DIR)/main_floppy.img: bootloader kernel
 	@mcopy -i $@ test.txt "::test.txt"
 	@mmd -i $@ "::mydir"
 	@mcopy -i $@ test.txt "::mydir/test.txt"
+	@mmd -i $@ "::config"
+	@mcopy -i $@ config "::config/config"
 	@echo "--> Created: " $@
 
 #
