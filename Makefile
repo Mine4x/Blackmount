@@ -28,8 +28,8 @@ $(BUILD_DIR)/main_floppy.img: bootloader kernel
 harddisk_image: $(BUILD_DIR)/harddisk.img
 
 $(BUILD_DIR)/harddisk.img: always
-	@dd if=/dev/zero of=$@ bs=512 count=32768 >/dev/null
-	@mkfs.fat -F 16 -n "NBOSHDD" $@ >/dev/null
+	@dd if=/dev/zero of=$@ bs=512 count=131072 >/dev/null
+	@mkfs.fat -F 32 -n "NBOSHDD" $@ >/dev/null
 	@mcopy -i $@ test.txt "::test.txt"
 	@mmd -i $@ "::mydir"
 	@mcopy -i $@ test.txt "::mydir/test.txt"

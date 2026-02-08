@@ -171,68 +171,95 @@ static uint32_t fat_cluster_to_sector(fat_fs_t* fs, uint32_t cluster) {
     return fs->data_start + (cluster - 2) * fs->spc;
 }
 
-// TODO: subdir support
-// FIXME: not working on FAT 32
-bool fat_open(fat_fs_t* fs, const char* path, fat_file_t* out) {
-    if (!fs || !path || !out) {
-        return false;
-    }
-    
-    if (path[0] == '/') {
-        path++;
-    }
-    
-    typedef struct __attribute__((packed)) {
-        char name[11];
-        uint8_t attr;
-        uint8_t reserved;
-        uint8_t create_time_tenth;
-        uint16_t create_time;
-        uint16_t create_date;
-        uint16_t access_date;
-        uint16_t cluster_high;
-        uint16_t modify_time;
-        uint16_t modify_date;
-        uint16_t cluster_low;
-        uint32_t size;
-    } fat_dir_entry_t;
-    
-    char fat_name[11];
+static void fat_name_to_83(const char* name, char* fat_name) {
     memset(fat_name, ' ', 11);
     
     int i = 0, j = 0;
-    while (path[i] && path[i] != '.' && j < 8) {
-        fat_name[j++] = (path[i] >= 'a' && path[i] <= 'z') ? 
-                        path[i] - 32 : path[i];
-        i++;
+    while (name[i] && name[i] != '.' && name[i] != '/' && j < 8) {
+        char c = name[i++];
+        if (c >= 'a' && c <= 'z') c -= 32;
+        fat_name[j++] = c;
     }
     
-    if (path[i] == '.') {
+    if (name[i] == '.') {
         i++;
         j = 8;
-        while (path[i] && j < 11) {
-            fat_name[j++] = (path[i] >= 'a' && path[i] <= 'z') ? 
-                            path[i] - 32 : path[i];
-            i++;
+        while (name[i] && name[i] != '/' && j < 11) {
+            char c = name[i++];
+            if (c >= 'a' && c <= 'z') c -= 32;
+            fat_name[j++] = c;
         }
     }
-    
-    uint32_t root_sectors = ((fs->root_entries * 32) + (fs->bps - 1)) / fs->bps;
+}
+
+static bool fat_search_dir_cluster(fat_fs_t* fs, uint32_t dir_cluster, 
+                                   const char* fat_name, fat_dir_entry_t* out_entry,
+                                   uint32_t* out_sector, uint32_t* out_offset) {
     uint8_t sector[512];
+    uint32_t current_cluster = dir_cluster;
+    
+    while (current_cluster != 0xFFFFFFFF && current_cluster >= 2) {
+        uint32_t sector_num = fat_cluster_to_sector(fs, current_cluster);
+        
+        for (uint32_t sec = 0; sec < fs->spc; sec++) {
+            if (!fs->dev->read(fs->dev, sector_num + sec, 1, sector)) {
+                return false;
+            }
+            
+            fat_dir_entry_t* entries = (fat_dir_entry_t*)sector;
+            uint32_t entries_per_sector = fs->bps / sizeof(fat_dir_entry_t);
+            
+            for (uint32_t entry = 0; entry < entries_per_sector; entry++) {
+                if (entries[entry].name[0] == 0x00) {
+                    return false;
+                }
+                
+                if (entries[entry].name[0] == 0xE5) {
+                    continue;
+                }
+                
+                if (entries[entry].attr & 0x08) {
+                    continue;
+                }
+                
+                if (memcmp(entries[entry].name, fat_name, 11) == 0) {
+                    if (out_entry) {
+                        memcpy(out_entry, &entries[entry], sizeof(fat_dir_entry_t));
+                    }
+                    if (out_sector) {
+                        *out_sector = sector_num + sec;
+                    }
+                    if (out_offset) {
+                        *out_offset = entry * sizeof(fat_dir_entry_t);
+                    }
+                    return true;
+                }
+            }
+        }
+        
+        current_cluster = fat_get_next_cluster(fs, current_cluster);
+    }
+    
+    return false;
+}
+
+static bool fat_search_root_fixed(fat_fs_t* fs, const char* fat_name,
+                                  fat_dir_entry_t* out_entry,
+                                  uint32_t* out_sector, uint32_t* out_offset) {
+    uint8_t sector[512];
+    uint32_t root_sectors = ((fs->root_entries * 32) + (fs->bps - 1)) / fs->bps;
     uint32_t root_sector = fs->root_dir;
     
     for (uint32_t sector_num = 0; sector_num < root_sectors; sector_num++) {
         if (!fs->dev->read(fs->dev, root_sector + sector_num, 1, sector)) {
-            log_err("FAT", "Failed to read root directory sector");
             return false;
         }
         
         fat_dir_entry_t* entries = (fat_dir_entry_t*)sector;
-        uint32_t entries_per_sector = fs->bps / 32;
+        uint32_t entries_per_sector = fs->bps / sizeof(fat_dir_entry_t);
         
         for (uint32_t entry = 0; entry < entries_per_sector; entry++) {
             if (entries[entry].name[0] == 0x00) {
-                log_err("FAT", "File not found: %s", path);
                 return false;
             }
             
@@ -245,22 +272,106 @@ bool fat_open(fat_fs_t* fs, const char* path, fat_file_t* out) {
             }
             
             if (memcmp(entries[entry].name, fat_name, 11) == 0) {
-                out->fs = fs;
-                out->size = entries[entry].size;
-                out->pos = 0;
-                out->cluster = entries[entry].cluster_low;
-                if (fs->type == FAT32) {
-                    out->cluster |= ((uint32_t)entries[entry].cluster_high << 16);
+                if (out_entry) {
+                    memcpy(out_entry, &entries[entry], sizeof(fat_dir_entry_t));
                 }
-                
-                log_ok("FAT", "Opened file: %s (size: %u bytes, cluster: %u)", 
-                       path, out->size, out->cluster);
+                if (out_sector) {
+                    *out_sector = root_sector + sector_num;
+                }
+                if (out_offset) {
+                    *out_offset = entry * sizeof(fat_dir_entry_t);
+                }
                 return true;
             }
         }
     }
     
-    log_err("FAT", "File not found: %s", path);
+    return false;
+}
+
+bool fat_open(fat_fs_t* fs, const char* path, fat_file_t* out) {
+    if (!fs || !path || !out) {
+        return false;
+    }
+
+    // Skip leading slash
+    if (path[0] == '/') {
+        path++;
+    }
+
+    // Start at root directory
+    uint32_t current_cluster = (fs->type == FAT32) ? fs->root_cluster : 0;
+    bool is_root = true;
+    
+    // Parse path components
+    char component[256];
+    int comp_idx = 0;
+    
+    while (*path) {
+        // Extract next path component
+        comp_idx = 0;
+        while (*path && *path != '/' && comp_idx < 255) {
+            component[comp_idx++] = *path++;
+        }
+        component[comp_idx] = '\0';
+        
+        if (*path == '/') {
+            path++;
+        }
+        
+        // Skip empty components
+        if (comp_idx == 0) {
+            continue;
+        }
+        
+        // Convert to FAT 8.3 format
+        char fat_name[11];
+        fat_name_to_83(component, fat_name);
+        
+        // Search for this component
+        fat_dir_entry_t entry;
+        uint32_t dir_sector = 0;
+        uint32_t dir_offset = 0;
+        bool found = false;
+        
+        if (is_root && fs->type != FAT32) {
+            // Search fixed root directory (FAT12/FAT16)
+            found = fat_search_root_fixed(fs, fat_name, &entry, &dir_sector, &dir_offset);
+        } else {
+            // Search directory cluster chain (FAT32 root or any subdir)
+            found = fat_search_dir_cluster(fs, current_cluster, fat_name, &entry, &dir_sector, &dir_offset);
+        }
+        
+        if (!found) {
+            return false;
+        }
+        
+        // Get the cluster number
+        uint32_t cluster = entry.cluster_low;
+        if (fs->type == FAT32) {
+            cluster |= ((uint32_t)entry.cluster_high << 16);
+        }
+        
+        // Check if there's more path to traverse
+        if (*path != '\0') {
+            // Must be a directory to continue
+            if (!(entry.attr & 0x10)) {
+                return false; // Not a directory
+            }
+            
+            current_cluster = cluster;
+            is_root = false;
+        } else {
+            out->fs = fs;
+            out->size = entry.size;
+            out->pos = 0;
+            out->cluster = cluster;
+            out->dir_sector = dir_sector;
+            out->dir_offset = dir_offset;
+            return true;
+        }
+    }
+    
     return false;
 }
 
@@ -285,7 +396,6 @@ uint32_t fat_read(fat_file_t* file, void* buffer, uint32_t bytes) {
     uint32_t clusters_to_skip = file->pos / (fs->spc * fs->bps);
     uint32_t offset_in_cluster = file->pos % (fs->spc * fs->bps);
     
-    // Skip to the cluster containing our current position
     for (uint32_t i = 0; i < clusters_to_skip; i++) {
         current_cluster = fat_get_next_cluster(fs, current_cluster);
         if (current_cluster == 0xFFFFFFFF) {
@@ -330,4 +440,361 @@ uint32_t fat_read(fat_file_t* file, void* buffer, uint32_t bytes) {
     }
     
     return total_read;
+}
+
+static uint32_t fat_find_free_cluster(fat_fs_t* fs) {
+    uint8_t sector[512];
+
+    uint32_t total_sectors = fs->dev->sector_count;
+    uint32_t data_sectors = total_sectors - fs->data_start;
+    uint32_t total_clusters = data_sectors / fs->spc;
+
+    for (uint32_t cluster = 2; cluster < total_clusters + 2; cluster++) {
+        uint32_t fat_offset;
+        uint32_t fat_sector;
+        uint32_t entry_offset;
+
+        if (fs->type == FAT16) {
+            fat_offset = cluster * 2;
+        } else if (fs->type == FAT32) {
+            fat_offset = cluster * 4;
+        } else {
+            return 0xFFFFFFFF; // FAT12 not supported here
+        }
+
+        fat_sector = fs->fat_start + (fat_offset / fs->bps);
+        entry_offset = fat_offset % fs->bps;
+
+        if (!fs->dev->read(fs->dev, fat_sector, 1, sector)) {
+            return 0xFFFFFFFF;
+        }
+
+        if (fs->type == FAT16) {
+            uint16_t val = *(uint16_t*)&sector[entry_offset];
+            if (val == 0x0000) {
+                return cluster;
+            }
+        } else {
+            uint32_t val = *(uint32_t*)&sector[entry_offset] & 0x0FFFFFFF;
+            if (val == 0x00000000) {
+                return cluster;
+            }
+        }
+    }
+
+    return 0xFFFFFFFF; // no free clusters
+}
+
+static bool fat_set_fat_entry(fat_fs_t* fs, uint32_t cluster, uint32_t next) {
+    uint32_t fat_offset = 0;
+    if (fs->type == FAT16) {
+        fat_offset = cluster * 2;
+    } else if (fs->type == FAT32) {
+        fat_offset = cluster * 4;
+    } else {
+        return false; // FAT12 not supported here
+    }
+
+    uint32_t fat_sector = fs->fat_start + (fat_offset / fs->bps);
+    uint32_t entry_offset = fat_offset % fs->bps;
+
+    uint8_t sector[512];
+    if (!fs->dev->read(fs->dev, fat_sector, 1, sector)) {
+        return false;
+    }
+
+    if (fs->type == FAT16) {
+        *(uint16_t*)&sector[entry_offset] = next & 0xFFFF;
+    } else {
+        *(uint32_t*)&sector[entry_offset] = next & 0x0FFFFFFF;
+    }
+
+    if (!fs->dev->write(fs->dev, fat_sector, 1, sector)) {
+        return false;
+    }
+
+    return true;
+}
+
+static bool fat_find_free_entry_in_cluster(fat_fs_t* fs, uint32_t dir_cluster,
+                                           fat_dir_entry_t** out_entry,
+                                           uint32_t* out_sector, uint32_t* out_offset) {
+    uint8_t sector[512];
+    uint32_t current_cluster = dir_cluster;
+    
+    while (current_cluster != 0xFFFFFFFF && current_cluster >= 2) {
+        uint32_t sector_num = fat_cluster_to_sector(fs, current_cluster);
+        
+        for (uint32_t sec = 0; sec < fs->spc; sec++) {
+            if (!fs->dev->read(fs->dev, sector_num + sec, 1, sector)) {
+                return false;
+            }
+            
+            fat_dir_entry_t* entries = (fat_dir_entry_t*)sector;
+            uint32_t entries_per_sector = fs->bps / sizeof(fat_dir_entry_t);
+            
+            for (uint32_t entry = 0; entry < entries_per_sector; entry++) {
+                if (entries[entry].name[0] == 0x00 || entries[entry].name[0] == 0xE5) {
+                    *out_entry = &entries[entry];
+                    *out_sector = sector_num + sec;
+                    *out_offset = entry * sizeof(fat_dir_entry_t);
+                    return true;
+                }
+            }
+        }
+        
+        // TODO: Allocate new cluster if directory is full
+        current_cluster = fat_get_next_cluster(fs, current_cluster);
+    }
+    
+    return false;
+}
+
+bool fat_create(fat_fs_t* fs, const char* name, fat_file_t* out) {
+    if (!fs || !name || !out) {
+        return false;
+    }
+    
+    // Skip leading slash
+    if (name[0] == '/') {
+        name++;
+    }
+    
+    // Find the last slash to separate directory path from filename
+    const char* filename = name;
+    const char* last_slash = NULL;
+    for (const char* p = name; *p; p++) {
+        if (*p == '/') {
+            last_slash = p;
+        }
+    }
+    
+    uint32_t dir_cluster;
+    bool is_root;
+    
+    // Navigate to parent directory if path contains subdirectories
+    if (last_slash) {
+        // Extract directory path
+        int dir_path_len = last_slash - name;
+        char dir_path[256];
+        memcpy(dir_path, name, dir_path_len);
+        dir_path[dir_path_len] = '\0';
+        
+        filename = last_slash + 1;
+        
+        // Start at root
+        dir_cluster = (fs->type == FAT32) ? fs->root_cluster : 0;
+        is_root = true;
+        
+        // Parse directory path components
+        char component[256];
+        int comp_idx = 0;
+        const char* path = dir_path;
+        
+        while (*path) {
+            // Extract next component
+            comp_idx = 0;
+            while (*path && *path != '/' && comp_idx < 255) {
+                component[comp_idx++] = *path++;
+            }
+            component[comp_idx] = '\0';
+            
+            if (*path == '/') {
+                path++;
+            }
+            
+            if (comp_idx == 0) {
+                continue;
+            }
+            
+            // Convert to FAT 8.3 format
+            char fat_name[11];
+            fat_name_to_83(component, fat_name);
+            
+            // Search for directory
+            fat_dir_entry_t entry;
+            bool found = false;
+            
+            if (is_root && fs->type != FAT32) {
+                found = fat_search_root_fixed(fs, fat_name, &entry, NULL, NULL);
+            } else {
+                found = fat_search_dir_cluster(fs, dir_cluster, fat_name, &entry, NULL, NULL);
+            }
+            
+            if (!found || !(entry.attr & 0x10)) {
+                return false; // Directory not found or not a directory
+            }
+            
+            // Move to this directory
+            dir_cluster = entry.cluster_low;
+            if (fs->type == FAT32) {
+                dir_cluster |= ((uint32_t)entry.cluster_high << 16);
+            }
+            is_root = false;
+        }
+    } else {
+        // Creating in root directory
+        dir_cluster = (fs->type == FAT32) ? fs->root_cluster : 0;
+        is_root = true;
+    }
+    
+    // Convert filename to FAT 8.3 format
+    char fat_name[11];
+    fat_name_to_83(filename, fat_name);
+    
+    uint8_t sector[512];
+    uint32_t dir_sector = 0;
+    uint32_t dir_offset = 0;
+    
+    // Find free entry in target directory
+    if (is_root && fs->type != FAT32) {
+        // Search fixed root directory
+        uint32_t root_sectors = ((fs->root_entries * 32) + (fs->bps - 1)) / fs->bps;
+        uint32_t root_sector = fs->root_dir;
+        
+        for (uint32_t s = 0; s < root_sectors; s++) {
+            if (!fs->dev->read(fs->dev, root_sector + s, 1, sector)) {
+                return false;
+            }
+            
+            fat_dir_entry_t* e = (fat_dir_entry_t*)sector;
+            uint32_t ents = fs->bps / 32;
+            
+            for (uint32_t n = 0; n < ents; n++) {
+                if (e[n].name[0] == 0x00 || e[n].name[0] == 0xE5) {
+                    memcpy(e[n].name, fat_name, 11);
+                    e[n].attr = 0x20;
+                    e[n].size = 0;
+                    e[n].cluster_low = 0;
+                    e[n].cluster_high = 0;
+                    
+                    if (!fs->dev->write(fs->dev, root_sector + s, 1, sector)) {
+                        return false;
+                    }
+                    
+                    out->fs = fs;
+                    out->pos = 0;
+                    out->size = 0;
+                    out->cluster = 0;
+                    out->dir_sector = root_sector + s;
+                    out->dir_offset = n * sizeof(fat_dir_entry_t);
+                    return true;
+                }
+            }
+        }
+    } else {
+        // Search directory cluster chain
+        fat_dir_entry_t* entry_ptr;
+        if (fat_find_free_entry_in_cluster(fs, dir_cluster, &entry_ptr, &dir_sector, &dir_offset)) {
+            if (!fs->dev->read(fs->dev, dir_sector, 1, sector)) {
+                return false;
+            }
+            
+            fat_dir_entry_t* e = (fat_dir_entry_t*)(sector + dir_offset);
+            memcpy(e->name, fat_name, 11);
+            e->attr = 0x20;
+            e->size = 0;
+            e->cluster_low = 0;
+            e->cluster_high = 0;
+            
+            if (!fs->dev->write(fs->dev, dir_sector, 1, sector)) {
+                return false;
+            }
+            
+            out->fs = fs;
+            out->pos = 0;
+            out->size = 0;
+            out->cluster = 0;
+            out->dir_sector = dir_sector;
+            out->dir_offset = dir_offset;
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+static bool fat_sync_dir_entry(fat_file_t* file) {
+    uint8_t sector[512];
+
+    if (!file || !file->fs) return false;
+    if (!file->fs->dev->read(file->fs->dev, file->dir_sector, 1, sector))
+        return false;
+
+    fat_dir_entry_t* e =
+        (fat_dir_entry_t*)(sector + file->dir_offset);
+
+    e->size = file->size;
+    e->cluster_low = file->cluster & 0xFFFF;
+
+    if (file->fs->type == FAT32)
+        e->cluster_high = (file->cluster >> 16) & 0xFFFF;
+
+    return file->fs->dev->write(file->fs->dev, file->dir_sector, 1, sector);
+}
+
+uint32_t fat_write(fat_file_t* f, const void* buf, uint32_t bytes) {
+    if (!f || !buf || !bytes) return 0;
+
+    fat_fs_t* fs = f->fs;
+    uint32_t cluster_size = fs->spc * fs->bps;
+    const uint8_t* src = buf;
+    uint32_t written = 0;
+
+    if (f->cluster == 0) {
+        uint32_t c = fat_find_free_cluster(fs);
+        if (c == 0xFFFFFFFF) return 0;
+        fat_set_fat_entry(fs, c, 0xFFFFFFFF);
+        f->cluster = c;
+    }
+
+    uint32_t cur = f->cluster;
+    uint32_t skip = f->pos / cluster_size;
+    for (uint32_t i = 0; i < skip; i++) {
+        uint32_t n = fat_get_next_cluster(fs, cur);
+        if (n == 0xFFFFFFFF) {
+            n = fat_find_free_cluster(fs);
+            if (n == 0xFFFFFFFF) break;
+            fat_set_fat_entry(fs, cur, n);
+            fat_set_fat_entry(fs, n, 0xFFFFFFFF);
+        }
+        cur = n;
+    }
+
+    uint8_t sector[512];
+
+    while (bytes) {
+        uint32_t off = f->pos % cluster_size;
+        uint32_t sec = off / fs->bps;
+        uint32_t in = off % fs->bps;
+        uint32_t lba = fat_cluster_to_sector(fs, cur) + sec;
+
+        if (!fs->dev->read(fs->dev, lba, 1, sector)) break;
+
+        uint32_t n = fs->bps - in;
+        if (n > bytes) n = bytes;
+
+        memcpy(sector + in, src, n);
+        if (!fs->dev->write(fs->dev, lba, 1, sector)) break;
+
+        src += n;
+        bytes -= n;
+        written += n;
+        f->pos += n;
+        if (f->pos > f->size) f->size = f->pos;
+
+        if ((f->pos % cluster_size) == 0 && bytes) {
+            uint32_t nx = fat_get_next_cluster(fs, cur);
+            if (nx == 0xFFFFFFFF) {
+                nx = fat_find_free_cluster(fs);
+                if (nx == 0xFFFFFFFF) break;
+                fat_set_fat_entry(fs, cur, nx);
+                fat_set_fat_entry(fs, nx, 0xFFFFFFFF);
+            }
+            cur = nx;
+        }
+    }
+
+    fat_sync_dir_entry(f);
+    return written;
 }
