@@ -1,8 +1,8 @@
 include build_scripts/config.mk
 
-.PHONY: all floppy_image kernel bootloader clean always tools_fat
+.PHONY: all floppy_image kernel bootloader clean always tools_fat iso harddisk_image
 
-all: floppy_image tools_fat
+all: floppy_image harddisk_image tools_fat
 
 include build_scripts/toolchain.mk
 
@@ -20,6 +20,32 @@ $(BUILD_DIR)/main_floppy.img: bootloader kernel
 	@mcopy -i $@ test.txt "::test.txt"
 	@mmd -i $@ "::mydir"
 	@mcopy -i $@ test.txt "::mydir/test.txt"
+	@mmd -i $@ "::config"
+	@mcopy -i $@ config "::config/config"
+	@echo "--> Created: " $@
+
+#
+# Hard disk image
+#
+harddisk_image: $(BUILD_DIR)/harddisk.img
+
+$(BUILD_DIR)/harddisk.img: always
+	@dd if=/dev/zero of=$@ bs=512 count=131072 >/dev/null
+	@mkfs.fat -F 32 -n "NBOSHDD" $@ >/dev/null
+	@mcopy -i $@ test.txt "::test.txt"
+	@mmd -i $@ "::mydir"
+	@mcopy -i $@ test.txt "::mydir/test.txt"
+	@echo "--> Created: " $@
+
+#
+# ISO image
+#
+iso: $(BUILD_DIR)/os.iso
+
+$(BUILD_DIR)/os.iso: bootloader kernel
+	@mkdir -p $(BUILD_DIR)/iso
+	@cp $(BUILD_DIR)/main_floppy.img $(BUILD_DIR)/iso/boot.img
+	@genisoimage -quiet -V "NBOS" -input-charset iso8859-1 -o $@ -b boot.img -hide boot.img $(BUILD_DIR)/iso
 	@echo "--> Created: " $@
 
 #
@@ -77,6 +103,7 @@ $(BUILD_DIR)/kernel.bin: always
 # Tools
 #
 tools_fat: $(BUILD_DIR)/tools/fat
+
 $(BUILD_DIR)/tools/fat: always tools/fat/fat.c
 	@mkdir -p $(BUILD_DIR)/tools
 	@$(MAKE) -C tools/fat BUILD_DIR=$(abspath $(BUILD_DIR))

@@ -2,6 +2,7 @@
 #include <arch/i686/irq.h>
 #include <debug.h>
 #include <proc/proc.h>
+#include <drivers/disk/floppy.h>
 
 #define PIT_FREQUENCY 1193182  // PIT oscillator frequency in Hz
 #define TARGET_FREQUENCY 1000  // Target 1000 Hz (1ms per tick)
@@ -10,6 +11,8 @@ volatile uint32_t g_pit_ticks = 0;
 
 static void timer_irq_handler(Registers* regs) {
     g_pit_ticks++;
+
+    floppy_irq_handler();
 
     proc_update_time(1);
     proc_schedule();

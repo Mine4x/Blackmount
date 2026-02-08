@@ -12,6 +12,11 @@
 #include <arch/i686/paging.h>
 #include <arch/i686/pagefault.h>
 #include <proc/proc.h>
+#include <drivers/disk/floppy.h>
+#include <block/block.h>
+#include <drivers/fs/fat/fat.h>
+#include <block/block_floppy.h>
+#include <config/config.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -46,6 +51,13 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     ata_init();
     log_info("Kernel", "Starting Proc");
     proc_init();
+    log_info("Kernel", "Starting FDC");
+    floppy_init();
+    log_info("Kernel", "Mounting Floppy bootdrive");
+    block_device_t* boot_block = floppy_create_blockdev("boot", bootDrive);
+    fat_fs_t* boot_fs = fat_mount(boot_block);
+    log_info("Kernel", "Loading Config from boot drive");
+    loadConfig(boot_fs);
 
     log_info("Kernel", "Creating important files");
 
@@ -53,7 +65,9 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     ramdisk_create_dir("/bin");
 
     log_ok("Kernel", "Created all important files");
-    
+   
+    log_warn("Kernel", "If you are looking for the shell, it was removed in an older update since a shell doesn't really belong in a Kernel");
+
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
     proc_start_scheduling();

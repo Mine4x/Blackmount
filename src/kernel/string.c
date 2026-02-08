@@ -20,3 +20,13 @@ void str_cpy(char* dst, const char* src) {
     }
     dst[i] = 0; // null terminator
 }
+
+size_t strlen(const char* str) {
+    return str_len(str);
+}
+void strcpy(char* dst, const char* src) {
+    return str_cpy(dst, src);
+}
+int strcmp(const char* a, const char* b) {
+    return str_cmp(a, b);
+}
