@@ -2,22 +2,22 @@
 #include "stdio.h"
 #include "memory.h"
 #include <hal/hal.h>
-#include <arch/i686/irq.h>
+#include <arch/x86_64/irq.h>
 #include <debug.h>
 #include <heap.h>
 #include <drivers/fs/ramdisk.h>
 #include <drivers/driverman.h>
 #include <drivers/disk/ata.h>
 #include <timer/timer.h>
-#include <arch/i686/paging.h>
-#include <arch/i686/pagefault.h>
+#include <arch/x86_64/paging.h>
+#include <arch/x86_64/pagefault.h>
 #include <proc/proc.h>
 #include <drivers/disk/floppy.h>
 #include <block/block.h>
 #include <drivers/fs/fat/fat.h>
 #include <block/block_floppy.h>
 #include <config/config.h>
-#include <arch/i686/syscalls.h>
+#include <arch/x86_64/syscalls.h>
 #include <syscalls/scman.h>
 
 extern uint8_t __bss_start;
@@ -43,7 +43,7 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     paging_init();
     log_ok("Boot", "Initialized Paging");
 
-    i686_PageFault_Initialize();
+    x86_64_PageFault_Initialize();
     log_ok("Boot", "Initialized Pagefault handler");
     
     proc_init();

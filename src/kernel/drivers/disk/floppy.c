@@ -51,20 +51,20 @@ static floppy_geometry_t g_geometry = {
 static uint8_t __attribute__((aligned(0x8000))) g_dma_buffer[512 * 18];
 static volatile bool g_irq_received = false;
 
-extern void i686_outb(uint16_t port, uint8_t value);
-extern uint8_t i686_inb(uint16_t port);
-extern void i686_iowait(void);
-extern uint8_t i686_DisableInterrupts(void);
-extern uint8_t i686_EnableInterrupts(void);
+extern void x86_64_outb(uint16_t port, uint8_t value);
+extern uint8_t x86_64_inb(uint16_t port);
+extern void x86_64_iowait(void);
+extern uint8_t x86_64_DisableInterrupts(void);
+extern uint8_t x86_64_EnableInterrupts(void);
 
 // Wait for status
 static bool fdc_wait_ready(bool write) {
     for (int i = 0; i < 600; i++) {
-        uint8_t msr = i686_inb(FDC_MSR);
+        uint8_t msr = x86_64_inb(FDC_MSR);
         if ((msr & MSR_RQM) && (write || (msr & MSR_DIO))) {
             return true;
         }
-        i686_iowait();
+        x86_64_iowait();
     }
     log_err("FDC", "Timeout waiting for controller ready");
     return false;
@@ -73,14 +73,14 @@ static bool fdc_wait_ready(bool write) {
 // Send byte to FDC
 static bool fdc_write_byte(uint8_t byte) {
     if (!fdc_wait_ready(true)) return false;
-    i686_outb(FDC_DATA, byte);
+    x86_64_outb(FDC_DATA, byte);
     return true;
 }
 
 // Read byte from FDC
 static bool fdc_read_byte(uint8_t* byte) {
     if (!fdc_wait_ready(false)) return false;
-    *byte = i686_inb(FDC_DATA);
+    *byte = x86_64_inb(FDC_DATA);
     return true;
 }
 
@@ -89,21 +89,21 @@ static void fdc_setup_dma(void* buffer, uint16_t length, bool write) {
     uint32_t addr = (uint32_t)buffer;
     uint8_t mode = write ? 0x4A : 0x46; // Read=0x46, Write=0x4A
     
-    i686_outb(DMA_RESET, 0xFF);
-    i686_outb(DMA_MODE, mode);
-    i686_outb(DMA_ADDR, (addr >> 0) & 0xFF);
-    i686_outb(DMA_ADDR, (addr >> 8) & 0xFF);
-    i686_outb(DMA_PAGE, (addr >> 16) & 0xFF);
-    i686_outb(DMA_COUNT, (length - 1) & 0xFF);
-    i686_outb(DMA_COUNT, ((length - 1) >> 8) & 0xFF);
-    i686_outb(DMA_UNMASK, 0x02);
+    x86_64_outb(DMA_RESET, 0xFF);
+    x86_64_outb(DMA_MODE, mode);
+    x86_64_outb(DMA_ADDR, (addr >> 0) & 0xFF);
+    x86_64_outb(DMA_ADDR, (addr >> 8) & 0xFF);
+    x86_64_outb(DMA_PAGE, (addr >> 16) & 0xFF);
+    x86_64_outb(DMA_COUNT, (length - 1) & 0xFF);
+    x86_64_outb(DMA_COUNT, ((length - 1) >> 8) & 0xFF);
+    x86_64_outb(DMA_UNMASK, 0x02);
 }
 
 // Motor control
 static void fdc_motor(uint8_t drive, bool on) {
     uint8_t motor_bit = DOR_MOTA << drive;
     uint8_t dor = DOR_DMAEN | (on ? motor_bit : 0) | drive;
-    i686_outb(FDC_DOR, dor);
+    x86_64_outb(FDC_DOR, dor);
     
     if (on) {
         // Wait for motor spin-up (500ms approximation)
@@ -115,9 +115,9 @@ static void fdc_motor(uint8_t drive, bool on) {
 static bool fdc_reset(void) {
     log_info("FDC", "Resetting controller");
     
-    i686_outb(FDC_DOR, DOR_RESET);
-    i686_iowait();
-    i686_outb(FDC_DOR, DOR_DMAEN);
+    x86_64_outb(FDC_DOR, DOR_RESET);
+    x86_64_iowait();
+    x86_64_outb(FDC_DOR, DOR_DMAEN);
     
     // Wait for interrupt
     for (volatile int i = 0; i < 100000 && !g_irq_received; i++);
@@ -132,7 +132,7 @@ static bool fdc_reset(void) {
     }
     
     // Configure controller
-    i686_outb(FDC_CCR, 0); // 500 Kbps
+    x86_64_outb(FDC_CCR, 0); // 500 Kbps
     
     fdc_write_byte(CMD_SPECIFY);
     fdc_write_byte(0xDF); // SRT=3ms, HUT=240ms

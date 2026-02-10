@@ -45,46 +45,46 @@ static const char* const g_Exceptions[] = {
     ""
 };
 
-void i686_ISR_InitializeGates();
+void x86_64_ISR_InitializeGates();
 
-void i686_ISR_Initialize()
+void x86_64_ISR_Initialize()
 {
-    i686_ISR_InitializeGates();
+    x86_64_ISR_InitializeGates();
     for (int i = 0; i < 256; i++)
-        i686_IDT_EnableGate(i);
-
-    i686_IDT_DisableGate(0x80);
+        x86_64_IDT_EnableGate(i);
+    x86_64_IDT_DisableGate(0x80);
 }
 
-void __attribute__((cdecl)) i686_ISR_Handler(Registers* regs)
+void x86_64_ISR_Handler(Registers* regs)
 {
     if (g_ISRHandlers[regs->interrupt] != NULL)
         g_ISRHandlers[regs->interrupt](regs);
-
     else if (regs->interrupt >= 32)
         log_err(MODULE, "Unhandled interrupt %d!", regs->interrupt);
-    
     else 
     {
         log_crit(MODULE, "Unhandled exception %d %s", regs->interrupt, g_Exceptions[regs->interrupt]);
-        
-        log_crit(MODULE, "  eax=%x  ebx=%x  ecx=%x  edx=%x  esi=%x  edi=%x",
-               regs->eax, regs->ebx, regs->ecx, regs->edx, regs->esi, regs->edi);
-
-        log_crit(MODULE, "  esp=%x  ebp=%x  eip=%x  eflags=%x  cs=%x  ds=%x  ss=%x",
-               regs->esp, regs->ebp, regs->eip, regs->eflags, regs->cs, regs->ds, regs->ss);
-
-        log_crit(MODULE, "  interrupt=%x  errorcode=%x", regs->interrupt, regs->error);
-
+        log_crit(MODULE, "  rax=%016lx  rbx=%016lx  rcx=%016lx  rdx=%016lx",
+                 regs->rax, regs->rbx, regs->rcx, regs->rdx);
+        log_crit(MODULE, "  rsi=%016lx  rdi=%016lx  rbp=%016lx  rsp=%016lx",
+                 regs->rsi, regs->rdi, regs->rbp, regs->rsp);
+        log_crit(MODULE, "  r8=%016lx   r9=%016lx   r10=%016lx  r11=%016lx",
+                 regs->r8, regs->r9, regs->r10, regs->r11);
+        log_crit(MODULE, "  r12=%016lx  r13=%016lx  r14=%016lx  r15=%016lx",
+                 regs->r12, regs->r13, regs->r14, regs->r15);
+        log_crit(MODULE, "  rip=%016lx  rflags=%016lx",
+                 regs->rip, regs->rflags);
+        log_crit(MODULE, "  cs=%04x  ds=%04x  es=%04x  fs=%04x  gs=%04x  ss=%04x",
+                 regs->cs, regs->ds, regs->es, regs->fs, regs->gs, regs->ss);
+        log_crit(MODULE, "  interrupt=%x  errorcode=%lx", regs->interrupt, regs->error);
         log_crit(MODULE, "KERNEL PANIC!");
-        printf("KERNEL PANIC!");
-
-        i686_Panic();
+        printf("KERNEL PANIC!\n");
+        x86_64_Panic();
     }
 }
 
-void i686_ISR_RegisterHandler(int interrupt, ISRHandler handler)
+void x86_64_ISR_RegisterHandler(int interrupt, ISRHandler handler)
 {
     g_ISRHandlers[interrupt] = handler;
-    i686_IDT_EnableGate(interrupt);
+    x86_64_IDT_EnableGate(interrupt);
 }

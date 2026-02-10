@@ -14,38 +14,31 @@ typedef struct
 typedef struct
 {
     uint16_t Limit;                     // sizeof(gdt) - 1
-    GDTEntry* Ptr;                      // address of GDT
+    GDTEntry* Ptr;                      // address of GDT (64-bit pointer)
 } __attribute__((packed)) GDTDescriptor;
 
 typedef enum
 {
     GDT_ACCESS_CODE_READABLE                = 0x02,
     GDT_ACCESS_DATA_WRITEABLE               = 0x02,
-
     GDT_ACCESS_CODE_CONFORMING              = 0x04,
     GDT_ACCESS_DATA_DIRECTION_NORMAL        = 0x00,
     GDT_ACCESS_DATA_DIRECTION_DOWN          = 0x04,
-
     GDT_ACCESS_DATA_SEGMENT                 = 0x10,
     GDT_ACCESS_CODE_SEGMENT                 = 0x18,
-
     GDT_ACCESS_DESCRIPTOR_TSS               = 0x00,
-
     GDT_ACCESS_RING0                        = 0x00,
     GDT_ACCESS_RING1                        = 0x20,
     GDT_ACCESS_RING2                        = 0x40,
     GDT_ACCESS_RING3                        = 0x60,
-
     GDT_ACCESS_PRESENT                      = 0x80,
-
 } GDT_ACCESS;
 
 typedef enum 
 {
-    GDT_FLAG_64BIT                          = 0x20,
-    GDT_FLAG_32BIT                          = 0x40,
+    GDT_FLAG_64BIT                          = 0x20,  // L bit (Long mode)
+    GDT_FLAG_32BIT                          = 0x40,  // D/B bit
     GDT_FLAG_16BIT                          = 0x00,
-
     GDT_FLAG_GRANULARITY_1B                 = 0x00,
     GDT_FLAG_GRANULARITY_4K                 = 0x80,
 } GDT_FLAGS;
@@ -69,26 +62,25 @@ typedef enum
 GDTEntry g_GDT[] = {
     // NULL descriptor
     GDT_ENTRY(0, 0, 0, 0),
-
-    // Kernel 32-bit code segment
+    
+    // Kernel 64-bit code segment
     GDT_ENTRY(0,
-              0xFFFFF,
+              0,  // Base and limit ignored in 64-bit long mode
               GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_CODE_SEGMENT | GDT_ACCESS_CODE_READABLE,
-              GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
-
-    // Kernel 32-bit data segment
+              GDT_FLAG_64BIT | GDT_FLAG_GRANULARITY_4K),
+    
+    // Kernel 64-bit data segment
     GDT_ENTRY(0,
-              0xFFFFF,
+              0,  // Base and limit ignored in 64-bit long mode
               GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_DATA_SEGMENT | GDT_ACCESS_DATA_WRITEABLE,
-              GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
-
+              GDT_FLAG_GRANULARITY_4K),  // No 32-bit or 64-bit flag for data segments
 };
 
-GDTDescriptor g_GDTDescriptor = { sizeof(g_GDT) - 1, g_GDT};
+GDTDescriptor g_GDTDescriptor = { sizeof(g_GDT) - 1, g_GDT };
 
-void __attribute__((cdecl)) i686_GDT_Load(GDTDescriptor* descriptor, uint16_t codeSegment, uint16_t dataSegment);
+void x86_64_GDT_Load(GDTDescriptor* descriptor, uint16_t codeSegment, uint16_t dataSegment);
 
-void i686_GDT_Initialize()
+void x86_64_GDT_Initialize()
 {
-    i686_GDT_Load(&g_GDTDescriptor, i686_GDT_CODE_SEGMENT, i686_GDT_DATA_SEGMENT);
+    x86_64_GDT_Load(&g_GDTDescriptor, x86_64_GDT_CODE_SEGMENT, x86_64_GDT_DATA_SEGMENT);
 }

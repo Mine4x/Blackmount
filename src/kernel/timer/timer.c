@@ -1,5 +1,6 @@
 #include <stdint.h>
-#include <arch/i686/irq.h>
+#include <arch/x86_64/irq.h>
+#include <arch/x86_64/io.h>
 #include <debug.h>
 #include <proc/proc.h>
 #include <drivers/disk/floppy.h>
@@ -23,14 +24,14 @@ void timer_init() {
     uint16_t divisor = PIT_FREQUENCY / TARGET_FREQUENCY;
     
     // Send command byte: Channel 0, lobyte/hibyte, rate generator
-    i686_outb(0x43, 0x36);
+    x86_64_outb(0x43, 0x36);
     
     // Send divisor
-    i686_outb(0x40, divisor & 0xFF);        // Low byte
-    i686_outb(0x40, (divisor >> 8) & 0xFF); // High byte
+    x86_64_outb(0x40, divisor & 0xFF);        // Low byte
+    x86_64_outb(0x40, (divisor >> 8) & 0xFF); // High byte
     
     // Register IRQ handler for IRQ 0 (timer)
-    i686_IRQ_RegisterHandler(0, timer_irq_handler);
+    x86_64_IRQ_RegisterHandler(0, timer_irq_handler);
     
     log_ok("TIMER", "PIT initialized at %d Hz (1ms ticks)", TARGET_FREQUENCY);
 }

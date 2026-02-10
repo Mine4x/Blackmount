@@ -58,15 +58,15 @@ static bool g_AutoEoi = false;
 void i8259_SetMask(uint16_t newMask) 
 {
     g_PicMask = newMask;
-    i686_outb(PIC1_DATA_PORT, g_PicMask & 0xFF);
-    i686_iowait();
-    i686_outb(PIC2_DATA_PORT, g_PicMask >> 8);
-    i686_iowait();
+    x86_64_outb(PIC1_DATA_PORT, g_PicMask & 0xFF);
+    x86_64_iowait();
+    x86_64_outb(PIC2_DATA_PORT, g_PicMask >> 8);
+    x86_64_iowait();
 }
 
 uint16_t i8259_GetMask() 
 {
-    return i686_inb(PIC1_DATA_PORT) | (i686_inb(PIC2_DATA_PORT) << 8);
+    return x86_64_inb(PIC1_DATA_PORT) | (x86_64_inb(PIC2_DATA_PORT) << 8);
 }
 
 void i8259_Configure(uint8_t offsetPic1, uint8_t offsetPic2, bool autoEoi)
@@ -75,22 +75,22 @@ void i8259_Configure(uint8_t offsetPic1, uint8_t offsetPic2, bool autoEoi)
     i8259_SetMask(0xFFFF);
 
     // initialization control word 1
-    i686_outb(PIC1_COMMAND_PORT, PIC_ICW1_ICW4 | PIC_ICW1_INITIALIZE);
-    i686_iowait();
-    i686_outb(PIC2_COMMAND_PORT, PIC_ICW1_ICW4 | PIC_ICW1_INITIALIZE);
-    i686_iowait();
+    x86_64_outb(PIC1_COMMAND_PORT, PIC_ICW1_ICW4 | PIC_ICW1_INITIALIZE);
+    x86_64_iowait();
+    x86_64_outb(PIC2_COMMAND_PORT, PIC_ICW1_ICW4 | PIC_ICW1_INITIALIZE);
+    x86_64_iowait();
 
     // initialization control word 2 - the offsets
-    i686_outb(PIC1_DATA_PORT, offsetPic1);
-    i686_iowait();
-    i686_outb(PIC2_DATA_PORT, offsetPic2);
-    i686_iowait();
+    x86_64_outb(PIC1_DATA_PORT, offsetPic1);
+    x86_64_iowait();
+    x86_64_outb(PIC2_DATA_PORT, offsetPic2);
+    x86_64_iowait();
 
     // initialization control word 3
-    i686_outb(PIC1_DATA_PORT, 0x4);             // tell PIC1 that it has a slave at IRQ2 (0000 0100)
-    i686_iowait();
-    i686_outb(PIC2_DATA_PORT, 0x2);             // tell PIC2 its cascade identity (0000 0010)
-    i686_iowait();
+    x86_64_outb(PIC1_DATA_PORT, 0x4);             // tell PIC1 that it has a slave at IRQ2 (0000 0100)
+    x86_64_iowait();
+    x86_64_outb(PIC2_DATA_PORT, 0x2);             // tell PIC2 its cascade identity (0000 0010)
+    x86_64_iowait();
 
     // initialization control word 4
     uint8_t icw4 = PIC_ICW4_8086;
@@ -98,10 +98,10 @@ void i8259_Configure(uint8_t offsetPic1, uint8_t offsetPic2, bool autoEoi)
         icw4 |= PIC_ICW4_AUTO_EOI;
     }
 
-    i686_outb(PIC1_DATA_PORT, icw4);
-    i686_iowait();
-    i686_outb(PIC2_DATA_PORT, icw4);
-    i686_iowait();
+    x86_64_outb(PIC1_DATA_PORT, icw4);
+    x86_64_iowait();
+    x86_64_outb(PIC2_DATA_PORT, icw4);
+    x86_64_iowait();
 
     // mask all interrupts until they are enabled by the device driver
     i8259_SetMask(0xFFFF);
@@ -110,8 +110,8 @@ void i8259_Configure(uint8_t offsetPic1, uint8_t offsetPic2, bool autoEoi)
 void i8259_SendEndOfInterrupt(int irq)
 {
     if (irq >= 8)
-        i686_outb(PIC2_COMMAND_PORT, PIC_CMD_END_OF_INTERRUPT);
-    i686_outb(PIC1_COMMAND_PORT, PIC_CMD_END_OF_INTERRUPT);
+        x86_64_outb(PIC2_COMMAND_PORT, PIC_CMD_END_OF_INTERRUPT);
+    x86_64_outb(PIC1_COMMAND_PORT, PIC_CMD_END_OF_INTERRUPT);
 }
 
 void i8259_Disable()
@@ -131,16 +131,16 @@ void i8259_Unmask(int irq)
 
 uint16_t i8259_ReadIrqRequestRegister()
 {
-    i686_outb(PIC1_COMMAND_PORT, PIC_CMD_READ_IRR);
-    i686_outb(PIC2_COMMAND_PORT, PIC_CMD_READ_IRR);
-    return ((uint16_t)i686_inb(PIC2_COMMAND_PORT)) | (((uint16_t)i686_inb(PIC2_COMMAND_PORT)) << 8);
+    x86_64_outb(PIC1_COMMAND_PORT, PIC_CMD_READ_IRR);
+    x86_64_outb(PIC2_COMMAND_PORT, PIC_CMD_READ_IRR);
+    return ((uint16_t)x86_64_inb(PIC1_COMMAND_PORT)) | (((uint16_t)x86_64_inb(PIC2_COMMAND_PORT)) << 8);
 }
 
 uint16_t i8259_ReadInServiceRegister()
 {
-    i686_outb(PIC1_COMMAND_PORT, PIC_CMD_READ_ISR);
-    i686_outb(PIC2_COMMAND_PORT, PIC_CMD_READ_ISR);
-    return ((uint16_t)i686_inb(PIC2_COMMAND_PORT)) | (((uint16_t)i686_inb(PIC2_COMMAND_PORT)) << 8);
+    x86_64_outb(PIC1_COMMAND_PORT, PIC_CMD_READ_ISR);
+    x86_64_outb(PIC2_COMMAND_PORT, PIC_CMD_READ_ISR);
+    return ((uint16_t)x86_64_inb(PIC1_COMMAND_PORT)) | (((uint16_t)x86_64_inb(PIC2_COMMAND_PORT)) << 8);
 }
 
 bool i8259_Probe()

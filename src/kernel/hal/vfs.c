@@ -1,6 +1,6 @@
 #include "vfs.h"
-#include <arch/i686/vga_text.h>
-#include <arch/i686/e9.h>
+#include <arch/x86_64/vga_text.h>
+#include <arch/x86_64/e9.h>
 
 int VFS_Write(fd_t file, uint8_t* data, size_t size)
 {

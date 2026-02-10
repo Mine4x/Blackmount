@@ -1,7 +1,7 @@
 #include "scman.h"
 #include "write.h"
-#include <arch/i686/syscalls.h>
+#include <arch/x86_64/syscalls.h>
 
 void register_syscalls() {
-    syscall_register(4, sys_write);
+    syscall_register(1, sys_write);
 }

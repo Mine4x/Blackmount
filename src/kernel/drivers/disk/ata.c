@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <debug.h>
 #include <drivers/disk/ata.h>
-#include <arch/i686/io.h>
+#include <arch/x86_64/io.h>
 #include <block/block.h>
 #include <block/block_ata.h>
 
@@ -102,13 +102,13 @@ static void ata_delay_ms(uint32_t ms) {
 
 static void ata_400ns_delay(ata_device_t* dev) {
     for (int i = 0; i < 4; i++) {
-        i686_inb(dev->ctrl_base + ATA_REG_ALT_STATUS);
+        x86_64_inb(dev->ctrl_base + ATA_REG_ALT_STATUS);
     }
 }
 
 static bool ata_wait_busy(ata_device_t* dev, uint32_t timeout_ms) {
     uint32_t start = get_tick_count();
-    while (i686_inb(dev->io_base + ATA_REG_CMD_STATUS) & ATA_SR_BSY) {
+    while (x86_64_inb(dev->io_base + ATA_REG_CMD_STATUS) & ATA_SR_BSY) {
         if (get_tick_count() - start > timeout_ms) {
             log_err("ATA", "Timeout waiting for BSY to clear");
             return false;
@@ -120,7 +120,7 @@ static bool ata_wait_busy(ata_device_t* dev, uint32_t timeout_ms) {
 static bool ata_wait_drq(ata_device_t* dev, uint32_t timeout_ms) {
     uint32_t start = get_tick_count();
     uint8_t status;
-    while (!((status = i686_inb(dev->io_base + ATA_REG_CMD_STATUS)) & ATA_SR_DRQ)) {
+    while (!((status = x86_64_inb(dev->io_base + ATA_REG_CMD_STATUS)) & ATA_SR_DRQ)) {
         if (status & ATA_SR_ERR) {
             ata_check_error(dev);
             return false;
@@ -134,9 +134,9 @@ static bool ata_wait_drq(ata_device_t* dev, uint32_t timeout_ms) {
 }
 
 static bool ata_check_error(ata_device_t* dev) {
-    uint8_t status = i686_inb(dev->io_base + ATA_REG_CMD_STATUS);
+    uint8_t status = x86_64_inb(dev->io_base + ATA_REG_CMD_STATUS);
     if (status & ATA_SR_ERR) {
-        uint8_t err = i686_inb(dev->io_base + ATA_REG_ERROR);
+        uint8_t err = x86_64_inb(dev->io_base + ATA_REG_ERROR);
         log_err("ATA", "Error status=0x%x error=0x%x", status, err);
         
         if (err & ATA_ER_BBK)   log_err("ATA", "  Bad block");
@@ -156,7 +156,7 @@ static bool ata_check_error(ata_device_t* dev) {
 }
 
 static void ata_select_drive(ata_device_t* dev) {
-    i686_outb(dev->io_base + ATA_REG_DRIVE, dev->drive_select);
+    x86_64_outb(dev->io_base + ATA_REG_DRIVE, dev->drive_select);
     ata_400ns_delay(dev);
 }
 
@@ -164,17 +164,17 @@ static bool ata_identify(ata_device_t* dev) {
     ata_select_drive(dev);
     
     // Set sector count and LBA to 0
-    i686_outb(dev->io_base + ATA_REG_SECTOR_CNT, 0);
-    i686_outb(dev->io_base + ATA_REG_LBA_LOW, 0);
-    i686_outb(dev->io_base + ATA_REG_LBA_MID, 0);
-    i686_outb(dev->io_base + ATA_REG_LBA_HIGH, 0);
+    x86_64_outb(dev->io_base + ATA_REG_SECTOR_CNT, 0);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_LOW, 0);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_MID, 0);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_HIGH, 0);
     
     // Send IDENTIFY command
-    i686_outb(dev->io_base + ATA_REG_CMD_STATUS, ATA_CMD_IDENTIFY);
+    x86_64_outb(dev->io_base + ATA_REG_CMD_STATUS, ATA_CMD_IDENTIFY);
     ata_400ns_delay(dev);
     
     // Check if drive exists
-    uint8_t status = i686_inb(dev->io_base + ATA_REG_CMD_STATUS);
+    uint8_t status = x86_64_inb(dev->io_base + ATA_REG_CMD_STATUS);
     if (status == 0) {
         return false;  // Drive does not exist
     }
@@ -185,8 +185,8 @@ static bool ata_identify(ata_device_t* dev) {
     }
     
     // Check if this is an ATA device (not ATAPI)
-    uint8_t lba_mid = i686_inb(dev->io_base + ATA_REG_LBA_MID);
-    uint8_t lba_high = i686_inb(dev->io_base + ATA_REG_LBA_HIGH);
+    uint8_t lba_mid = x86_64_inb(dev->io_base + ATA_REG_LBA_MID);
+    uint8_t lba_high = x86_64_inb(dev->io_base + ATA_REG_LBA_HIGH);
     if (lba_mid != 0 || lba_high != 0) {
         // Not an ATA device (probably ATAPI like CD-ROM)
         return false;
@@ -200,7 +200,7 @@ static bool ata_identify(ata_device_t* dev) {
     // Read identification data
     uint16_t identify_data[256];
     for (int i = 0; i < 256; i++) {
-        identify_data[i] = i686_inw(dev->io_base + ATA_REG_DATA);
+        identify_data[i] = x86_64_inw(dev->io_base + ATA_REG_DATA);
     }
     
     // Parse identification data
@@ -305,12 +305,12 @@ static bool ata_read_sectors_lba28(ata_device_t* dev, uint32_t lba, uint8_t coun
     if (!ata_wait_busy(dev, ATA_TIMEOUT_BSY)) return false;
     
     // Send command parameters
-    i686_outb(dev->io_base + ATA_REG_DRIVE, dev->drive_select | ((lba >> 24) & 0x0F));
-    i686_outb(dev->io_base + ATA_REG_SECTOR_CNT, count);
-    i686_outb(dev->io_base + ATA_REG_LBA_LOW,  (uint8_t)lba);
-    i686_outb(dev->io_base + ATA_REG_LBA_MID,  (uint8_t)(lba >> 8));
-    i686_outb(dev->io_base + ATA_REG_LBA_HIGH, (uint8_t)(lba >> 16));
-    i686_outb(dev->io_base + ATA_REG_CMD_STATUS, ATA_CMD_READ_PIO);
+    x86_64_outb(dev->io_base + ATA_REG_DRIVE, dev->drive_select | ((lba >> 24) & 0x0F));
+    x86_64_outb(dev->io_base + ATA_REG_SECTOR_CNT, count);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_LOW,  (uint8_t)lba);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_MID,  (uint8_t)(lba >> 8));
+    x86_64_outb(dev->io_base + ATA_REG_LBA_HIGH, (uint8_t)(lba >> 16));
+    x86_64_outb(dev->io_base + ATA_REG_CMD_STATUS, ATA_CMD_READ_PIO);
     
     // Read sectors
     uint16_t* buf16 = (uint16_t*)buffer;
@@ -319,7 +319,7 @@ static bool ata_read_sectors_lba28(ata_device_t* dev, uint32_t lba, uint8_t coun
         if (!ata_wait_drq(dev, ATA_TIMEOUT_DRQ)) return false;
         
         for (int i = 0; i < 256; i++) {
-            buf16[sector * 256 + i] = i686_inw(dev->io_base + ATA_REG_DATA);
+            buf16[sector * 256 + i] = x86_64_inw(dev->io_base + ATA_REG_DATA);
         }
     }
     
@@ -333,18 +333,18 @@ static bool ata_read_sectors_lba48(ata_device_t* dev, uint64_t lba, uint16_t cou
     if (!ata_wait_busy(dev, ATA_TIMEOUT_BSY)) return false;
     
     // Send high bytes
-    i686_outb(dev->io_base + ATA_REG_SECTOR_CNT, (count >> 8) & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_LOW,  (lba >> 24) & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_MID,  (lba >> 32) & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_HIGH, (lba >> 40) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_SECTOR_CNT, (count >> 8) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_LOW,  (lba >> 24) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_MID,  (lba >> 32) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_HIGH, (lba >> 40) & 0xFF);
     
     // Send low bytes
-    i686_outb(dev->io_base + ATA_REG_SECTOR_CNT, count & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_LOW,  lba & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_MID,  (lba >> 8) & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_HIGH, (lba >> 16) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_SECTOR_CNT, count & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_LOW,  lba & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_MID,  (lba >> 8) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_HIGH, (lba >> 16) & 0xFF);
     
-    i686_outb(dev->io_base + ATA_REG_CMD_STATUS, ATA_CMD_READ_PIO_EXT);
+    x86_64_outb(dev->io_base + ATA_REG_CMD_STATUS, ATA_CMD_READ_PIO_EXT);
     
     // Read sectors
     uint16_t* buf16 = (uint16_t*)buffer;
@@ -353,7 +353,7 @@ static bool ata_read_sectors_lba48(ata_device_t* dev, uint64_t lba, uint16_t cou
         if (!ata_wait_drq(dev, ATA_TIMEOUT_DRQ)) return false;
         
         for (int i = 0; i < 256; i++) {
-            buf16[sector * 256 + i] = i686_inw(dev->io_base + ATA_REG_DATA);
+            buf16[sector * 256 + i] = x86_64_inw(dev->io_base + ATA_REG_DATA);
         }
     }
     
@@ -367,12 +367,12 @@ static bool ata_write_sectors_lba28(ata_device_t* dev, uint32_t lba, uint8_t cou
     if (!ata_wait_busy(dev, ATA_TIMEOUT_BSY)) return false;
     
     // Send command parameters
-    i686_outb(dev->io_base + ATA_REG_DRIVE, dev->drive_select | ((lba >> 24) & 0x0F));
-    i686_outb(dev->io_base + ATA_REG_SECTOR_CNT, count);
-    i686_outb(dev->io_base + ATA_REG_LBA_LOW,  (uint8_t)lba);
-    i686_outb(dev->io_base + ATA_REG_LBA_MID,  (uint8_t)(lba >> 8));
-    i686_outb(dev->io_base + ATA_REG_LBA_HIGH, (uint8_t)(lba >> 16));
-    i686_outb(dev->io_base + ATA_REG_CMD_STATUS, ATA_CMD_WRITE_PIO);
+    x86_64_outb(dev->io_base + ATA_REG_DRIVE, dev->drive_select | ((lba >> 24) & 0x0F));
+    x86_64_outb(dev->io_base + ATA_REG_SECTOR_CNT, count);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_LOW,  (uint8_t)lba);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_MID,  (uint8_t)(lba >> 8));
+    x86_64_outb(dev->io_base + ATA_REG_LBA_HIGH, (uint8_t)(lba >> 16));
+    x86_64_outb(dev->io_base + ATA_REG_CMD_STATUS, ATA_CMD_WRITE_PIO);
     
     // Write sectors
     const uint16_t* buf16 = (const uint16_t*)buffer;
@@ -381,7 +381,7 @@ static bool ata_write_sectors_lba28(ata_device_t* dev, uint32_t lba, uint8_t cou
         if (!ata_wait_drq(dev, ATA_TIMEOUT_DRQ)) return false;
         
         for (int i = 0; i < 256; i++) {
-            i686_outw(dev->io_base + ATA_REG_DATA, buf16[sector * 256 + i]);
+            x86_64_outw(dev->io_base + ATA_REG_DATA, buf16[sector * 256 + i]);
         }
     }
     
@@ -396,18 +396,18 @@ static bool ata_write_sectors_lba48(ata_device_t* dev, uint64_t lba, uint16_t co
     if (!ata_wait_busy(dev, ATA_TIMEOUT_BSY)) return false;
     
     // Send high bytes
-    i686_outb(dev->io_base + ATA_REG_SECTOR_CNT, (count >> 8) & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_LOW,  (lba >> 24) & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_MID,  (lba >> 32) & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_HIGH, (lba >> 40) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_SECTOR_CNT, (count >> 8) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_LOW,  (lba >> 24) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_MID,  (lba >> 32) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_HIGH, (lba >> 40) & 0xFF);
     
     // Send low bytes
-    i686_outb(dev->io_base + ATA_REG_SECTOR_CNT, count & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_LOW,  lba & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_MID,  (lba >> 8) & 0xFF);
-    i686_outb(dev->io_base + ATA_REG_LBA_HIGH, (lba >> 16) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_SECTOR_CNT, count & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_LOW,  lba & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_MID,  (lba >> 8) & 0xFF);
+    x86_64_outb(dev->io_base + ATA_REG_LBA_HIGH, (lba >> 16) & 0xFF);
     
-    i686_outb(dev->io_base + ATA_REG_CMD_STATUS, ATA_CMD_WRITE_PIO_EXT);
+    x86_64_outb(dev->io_base + ATA_REG_CMD_STATUS, ATA_CMD_WRITE_PIO_EXT);
     
     // Write sectors
     const uint16_t* buf16 = (const uint16_t*)buffer;
@@ -416,7 +416,7 @@ static bool ata_write_sectors_lba48(ata_device_t* dev, uint64_t lba, uint16_t co
         if (!ata_wait_drq(dev, ATA_TIMEOUT_DRQ)) return false;
         
         for (int i = 0; i < 256; i++) {
-            i686_outw(dev->io_base + ATA_REG_DATA, buf16[sector * 256 + i]);
+            x86_64_outw(dev->io_base + ATA_REG_DATA, buf16[sector * 256 + i]);
         }
     }
     
@@ -432,7 +432,7 @@ bool ata_flush_cache(uint8_t bus, uint8_t drive) {
     if (!ata_wait_busy(dev, ATA_TIMEOUT_BSY)) return false;
     
     uint8_t cmd = dev->lba48_supported ? ATA_CMD_CACHE_FLUSH_EXT : ATA_CMD_CACHE_FLUSH;
-    i686_outb(dev->io_base + ATA_REG_CMD_STATUS, cmd);
+    x86_64_outb(dev->io_base + ATA_REG_CMD_STATUS, cmd);
     
     if (!ata_wait_busy(dev, ATA_TIMEOUT_BSY)) return false;
     return !ata_check_error(dev);
