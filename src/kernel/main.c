@@ -17,6 +17,8 @@
 #include <drivers/fs/fat/fat.h>
 #include <block/block_floppy.h>
 #include <config/config.h>
+#include <arch/i686/syscalls.h>
+#include <syscalls/scman.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __end;
@@ -24,7 +26,7 @@ extern uint8_t __end;
 void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 {
     memset(&__bss_start, 0, (&__end) - (&__bss_start));
-    log_ok("Boot", "Did memset");
+    log_ok("Boot", "Cleared BSS");
 
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
@@ -32,41 +34,33 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     init_heap();
     log_ok("Boot", "Initialized Heap");
 
-    ramdisk_init_fs();
-    log_ok("Boot", "Initialized Ramdisk");
-
     timer_init();
     log_ok("Boot", "Initialized timer");
 
     drivers_init();
+    log_ok("Boot", "Initialized initial drivers");
 
-    log_ok("Kernel", "Initialized all imortant systems");
-
-    log_warn("Kernel", "Initializing EXPERIMENTAL features");
-    log_info("Kernel", "Starting Paging");
     paging_init();
-    log_info("Kernel", "Starting Pagefault handler");
+    log_ok("Boot", "Initialized Paging");
+
     i686_PageFault_Initialize();
-    log_info("Kernel", "Starting ATA");
-    ata_init();
-    log_info("Kernel", "Starting Proc");
+    log_ok("Boot", "Initialized Pagefault handler");
+    
     proc_init();
-    log_info("Kernel", "Starting FDC");
-    floppy_init();
+    log_ok("Boot", "Initialized Multitasking");
+    
     log_info("Kernel", "Mounting Floppy bootdrive");
     block_device_t* boot_block = floppy_create_blockdev("boot", bootDrive);
     fat_fs_t* boot_fs = fat_mount(boot_block);
+    
     log_info("Kernel", "Loading Config from boot drive");
     loadConfig(boot_fs);
+    
+    log_info("Kernel", "Loading syscalls");
+    syscalls_init();
+    register_syscalls();
 
-    log_info("Kernel", "Creating important files");
-
-    ramdisk_create_dir("/sysbin");
-    ramdisk_create_dir("/bin");
-
-    log_ok("Kernel", "Created all important files");
-   
-    log_warn("Kernel", "If you are looking for the shell, it was removed in an older update since a shell doesn't really belong in a Kernel");
+    log_ok("Kernel", "Initialized all imortant systems");
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 

@@ -17,11 +17,7 @@ $(BUILD_DIR)/main_floppy.img: bootloader kernel
 	@dd if=$(BUILD_DIR)/stage1.bin of=$@ conv=notrunc >/dev/null
 	@mcopy -i $@ $(BUILD_DIR)/stage2.bin "::stage2.bin"
 	@mcopy -i $@ $(BUILD_DIR)/kernel.bin "::kernel.bin"
-	@mcopy -i $@ test.txt "::test.txt"
-	@mmd -i $@ "::mydir"
-	@mcopy -i $@ test.txt "::mydir/test.txt"
-	@mmd -i $@ "::config"
-	@mcopy -i $@ config "::config/config"
+	@mcopy -i $@ target/* "::"
 	@echo "--> Created: " $@
 
 #
