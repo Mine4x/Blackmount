@@ -1,76 +1,31 @@
 include build_scripts/config.mk
 
-.PHONY: all floppy_image kernel bootloader clean always tools_fat iso harddisk_image
+.PHONY: all floppy_image kernel bootloader clean always tools_fat harddisk_image iso_image
 
-all: floppy_image harddisk_image tools_fat
+all: iso_image tools_fat
 
 include build_scripts/toolchain.mk
 
 #
-# Floppy image
-#
-floppy_image: $(BUILD_DIR)/main_floppy.img
-
-$(BUILD_DIR)/main_floppy.img: bootloader kernel
-	@dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null
-	@mkfs.fat -F 12 -n "NBOS" $@ >/dev/null
-	@dd if=$(BUILD_DIR)/stage1.bin of=$@ conv=notrunc >/dev/null
-	@mcopy -i $@ $(BUILD_DIR)/stage2.bin "::stage2.bin"
-	@mcopy -i $@ $(BUILD_DIR)/kernel.bin "::kernel.bin"
-	@mcopy -i $@ target/* "::"
-	@echo "--> Created: " $@
-
-#
-# Hard disk image
-#
-harddisk_image: $(BUILD_DIR)/harddisk.img
-
-$(BUILD_DIR)/harddisk.img: always
-	@dd if=/dev/zero of=$@ bs=512 count=131072 >/dev/null
-	@mkfs.fat -F 32 -n "NBOSHDD" $@ >/dev/null
-	@mcopy -i $@ test.txt "::test.txt"
-	@mmd -i $@ "::mydir"
-	@mcopy -i $@ test.txt "::mydir/test.txt"
-	@echo "--> Created: " $@
-
-#
 # ISO image
 #
-iso: $(BUILD_DIR)/os.iso
+iso_image: $(BUILD_DIR)/nbos.iso
 
-$(BUILD_DIR)/os.iso: bootloader kernel
+$(BUILD_DIR)/nbos.iso: kernel
 	@mkdir -p $(BUILD_DIR)/iso
-	@cp $(BUILD_DIR)/main_floppy.img $(BUILD_DIR)/iso/boot.img
-	@genisoimage -quiet -V "NBOS" -input-charset iso8859-1 -o $@ -b boot.img -hide boot.img $(BUILD_DIR)/iso
-	@echo "--> Created: " $@
-
-#
-# ISO Image
-#
-iso_image: $(BUILD_DIR)/main_cd.iso
-
-$(BUILD_DIR)/main_cd.iso: bootloader kernel
-	@mkdir -p $(BUILD_DIR)/iso_root
-	@cp $(BUILD_DIR)/stage2.bin $(BUILD_DIR)/iso_root/
-	@cp $(BUILD_DIR)/kernel.bin $(BUILD_DIR)/iso_root/
-	@cp test.txt $(BUILD_DIR)/iso_root/
-	@mkdir -p $(BUILD_DIR)/iso_root/mydir
-	@cp test.txt $(BUILD_DIR)/iso_root/mydir/
-
-	@cp $(BUILD_DIR)/stage1.bin $(BUILD_DIR)/iso_root/stage1.bin
-
+	@echo "--> Copying target files (including Limine)..."
+	@cp -r target/* $(BUILD_DIR)/iso/
+	@cp $(BUILD_DIR)/kernel.bin $(BUILD_DIR)/iso/boot
+	@echo "--> Creating ISO image..."
 	@xorriso -as mkisofs \
-		-quiet \
-		-R \
-		-o $@ \
-		-isohybrid-mbr $(BUILD_DIR)/stage1.bin \
-		-b stage1.bin \
+		-b boot/limine-bios-cd.bin \
 		-no-emul-boot \
-		-boot-load-size 1 \
+		-boot-load-size 4 \
 		-boot-info-table \
-		$(BUILD_DIR)/iso_root
-
-
+		--protective-msdos-label \
+		$(BUILD_DIR)/iso \
+		-o $@
+	@echo "--> ISO created: $@"
 
 #
 # Bootloader

@@ -19,13 +19,19 @@
 #include <config/config.h>
 #include <arch/x86_64/syscalls.h>
 #include <syscalls/scman.h>
+#include "halt.h"
+#include <arch/x86_64/io.h>
 
 extern uint8_t __bss_start;
-extern uint8_t __end;
+extern uint8_t __bss_end;
 
-void __attribute__((section(".entry"))) start(uint16_t bootDrive)
-{
-    memset(&__bss_start, 0, (&__end) - (&__bss_start));
+void idle(void) {
+    proc_yield();
+}
+
+void kmain(void)
+{   
+    memset(&__bss_start, 0, (&__bss_end) - (&__bss_start));
     log_ok("Boot", "Cleared BSS");
 
     HAL_Initialize();
@@ -45,16 +51,9 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 
     x86_64_PageFault_Initialize();
     log_ok("Boot", "Initialized Pagefault handler");
-    
+
     proc_init();
     log_ok("Boot", "Initialized Multitasking");
-    
-    log_info("Kernel", "Mounting Floppy bootdrive");
-    block_device_t* boot_block = floppy_create_blockdev("boot", bootDrive);
-    fat_fs_t* boot_fs = fat_mount(boot_block);
-    
-    log_info("Kernel", "Loading Config from boot drive");
-    loadConfig(boot_fs);
     
     log_info("Kernel", "Loading syscalls");
     syscalls_init();
@@ -64,8 +63,8 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
+    proc_create(idle, 0, 0);
     proc_start_scheduling();
 
-end:
-    for (;;);
+    halt();
 }

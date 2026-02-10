@@ -2,22 +2,43 @@
 
 global x86_64_outb
 x86_64_outb:
-    mov dx, di          ; port in DI (first arg)
-    mov al, sil         ; value in SIL (second arg, low byte of RSI)
+    mov dx, di
+    mov al, sil
     out dx, al
     ret
 
 global x86_64_inb
 x86_64_inb:
-    mov dx, di          ; port in DI (first arg)
+    mov dx, di
     xor eax, eax
     in al, dx
     ret
 
-global x86_64_Panic
-x86_64_Panic:
-    cli
-    hlt
+global x86_64_outw
+x86_64_outw:
+    mov dx, di
+    mov ax, si
+    out dx, ax
+    ret
+
+global x86_64_inw
+x86_64_inw:
+    mov dx, di
+    in ax, dx
+    ret
+
+global x86_64_outl
+x86_64_outl:
+    mov dx, di
+    mov eax, esi
+    out dx, eax
+    ret
+
+global x86_64_inl
+x86_64_inl:
+    mov dx, di
+    in eax, dx
+    ret
 
 global x86_64_EnableInterrupts
 x86_64_EnableInterrupts:
@@ -29,24 +50,8 @@ x86_64_DisableInterrupts:
     cli
     ret
 
-global crash_me
-crash_me:
-    ; div by 0
-    ; mov rcx, 0x1337
-    ; mov rax, 0
-    ; div rax
-    int 0x80
-    ret
-
-global x86_64_inw
-x86_64_inw:
-    mov dx, di          ; port in DI (first arg)
-    in ax, dx
-    ret
-
-global x86_64_outw
-x86_64_outw:
-    mov dx, di          ; port in DI (first arg)
-    mov ax, si          ; value in SI (second arg)
-    out dx, ax
-    ret
+global x86_64_Panic
+x86_64_Panic:
+    cli
+    hlt
+    jmp x86_64_Panic

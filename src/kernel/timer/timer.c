@@ -11,6 +11,7 @@
 volatile uint32_t g_pit_ticks = 0;
 
 static void timer_irq_handler(Registers* regs) {
+    log_debug("Timer", "Timer Called!");
     g_pit_ticks++;
 
     floppy_irq_handler();
@@ -20,20 +21,19 @@ static void timer_irq_handler(Registers* regs) {
 }
 
 void timer_init() {
-    // Calculate divisor for desired frequency
     uint16_t divisor = PIT_FREQUENCY / TARGET_FREQUENCY;
     
-    // Send command byte: Channel 0, lobyte/hibyte, rate generator
     x86_64_outb(0x43, 0x36);
+    x86_64_outb(0x40, divisor & 0xFF);
+    x86_64_outb(0x40, (divisor >> 8) & 0xFF);
     
-    // Send divisor
-    x86_64_outb(0x40, divisor & 0xFF);        // Low byte
-    x86_64_outb(0x40, (divisor >> 8) & 0xFF); // High byte
-    
-    // Register IRQ handler for IRQ 0 (timer)
+    // Register handler FIRST
     x86_64_IRQ_RegisterHandler(0, timer_irq_handler);
     
-    log_ok("TIMER", "PIT initialized at %d Hz (1ms ticks)", TARGET_FREQUENCY);
+    // Unmask IRQ 0
+    x86_64_IRQ_Unmask(0);
+    
+    log_ok("TIMER", "PIT initialized at %d Hz", TARGET_FREQUENCY);
 }
 
 uint32_t timer_get_ticks() {

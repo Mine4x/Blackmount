@@ -10,25 +10,28 @@
 #define PIC_REMAP_OFFSET        0x20
 #define MODULE                  "PIC"
 
-IRQHandler g_IRQHandlers[16];
+IRQHandler g_IRQHandlers[16] = {0};
 static const PICDriver* g_Driver = NULL;
 
 void x86_64_IRQ_Handler(Registers* regs)
 {
     int irq = regs->interrupt - PIC_REMAP_OFFSET;
     
-    if (g_IRQHandlers[irq] != NULL)
-    {
-        // handle IRQ
-        g_IRQHandlers[irq](regs);
+    // Bounds check
+    if (irq < 0 || irq >= 16) {
+        log_warn(MODULE, "Invalid IRQ number: %d", irq);
+        return;
     }
-    else
-    {
+    
+    if (g_IRQHandlers[irq] != NULL) {
+        g_IRQHandlers[irq](regs);
+    } else {
         log_warn(MODULE, "Unhandled IRQ %d...", irq);
     }
     
-    // send EOI
-    g_Driver->SendEndOfInterrupt(irq);
+    if (g_Driver != NULL) {
+        g_Driver->SendEndOfInterrupt(irq);
+    }
 }
 
 void x86_64_IRQ_Initialize()
@@ -51,17 +54,21 @@ void x86_64_IRQ_Initialize()
     log_info(MODULE, "Found %s PIC.", g_Driver->Name);
     g_Driver->Initialize(PIC_REMAP_OFFSET, PIC_REMAP_OFFSET + 8, false);
     
-    // register ISR handlers for each of the 16 irq lines
+    // Register ISR handlers
     for (int i = 0; i < 16; i++)
         x86_64_ISR_RegisterHandler(PIC_REMAP_OFFSET + i, x86_64_IRQ_Handler);
     
-    // enable interrupts
-    x86_64_EnableInterrupts();
-    g_Driver->Unmask(0);
-    g_Driver->Unmask(1);
+    // DON'T enable interrupts here - let drivers do it when ready
+    // DON'T unmask IRQs here - let each driver unmask its own IRQ
 }
 
 void x86_64_IRQ_RegisterHandler(int irq, IRQHandler handler)
 {
     g_IRQHandlers[irq] = handler;
+}
+
+void x86_64_IRQ_Unmask(int irq) {
+    if (g_Driver != NULL) {
+        g_Driver->Unmask(irq);
+    }
 }
