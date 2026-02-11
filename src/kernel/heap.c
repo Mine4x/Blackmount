@@ -1,23 +1,30 @@
 #include "heap.h"
 #include "debug.h"
+#include <limine/limine_req.h>
+#include <stdint.h>
 
 #define HEAP_MODULE "HEAP"
-#define HEAP_SIZE (1024 * 1024)  // 1MB heap
+#define MIN_HEAP_SIZE (4 * 1024 * 1024)  // Minimum 4MB heap
 #define BLOCK_MAGIC 0xDEADBEEF
 
 typedef struct Block {
-    unsigned int magic; 
-    unsigned int size; 
+    uint32_t magic; 
+    uint64_t size; 
     int is_free; 
     struct Block* next; 
 } Block;
 
-static char heap[HEAP_SIZE];
-static Block* free_list = 0;
+static Block* free_list = NULL;
 static int heap_initialized = 0;
+static uint64_t heap_start = 0;
+static uint64_t heap_size = 0;
 
-static unsigned int align(unsigned int size) {
-    return (size + 7) & ~7;
+// External references to Limine data
+extern uint64_t hhdm_offset;
+extern struct limine_memmap_response* memmap;
+
+static uint64_t align(uint64_t size) {
+    return (size + 15) & ~15;  // 16-byte alignment for x86_64
 }
 
 void init_heap() {
@@ -26,40 +33,76 @@ void init_heap() {
         return;
     }
     
-    log_info(HEAP_MODULE, "Initializing heap (%d bytes)", HEAP_SIZE);
+    if (!memmap) {
+        log_crit(HEAP_MODULE, "Memory map not available");
+        return;
+    }
     
-    free_list = (Block*)heap;
+    log_info(HEAP_MODULE, "Scanning memory map for usable regions...");
+    
+    // Find the largest usable memory region
+    uint64_t best_base = 0;
+    uint64_t best_size = 0;
+    
+    for (uint64_t i = 0; i < memmap->entry_count; i++) {
+        struct limine_memmap_entry* entry = memmap->entries[i];
+        
+        if (entry->type == LIMINE_MEMMAP_USABLE && entry->length > best_size) {
+            best_base = entry->base;
+            best_size = entry->length;
+        }
+    }
+    
+    if (best_size < MIN_HEAP_SIZE) {
+        log_crit(HEAP_MODULE, "No suitable memory region found (need at least %llu bytes)", MIN_HEAP_SIZE);
+        return;
+    }
+    
+    // Use the first portion of the largest region for the heap
+    heap_start = best_base;
+    heap_size = best_size > (16 * 1024 * 1024) ? (16 * 1024 * 1024) : best_size; // Cap at 16MB
+    
+    log_info(HEAP_MODULE, "Using memory region: base=0x%llx, size=%llu bytes", heap_start, heap_size);
+    
+    // Convert physical address to virtual using HHDM
+    free_list = (Block*)(heap_start + hhdm_offset);
     free_list->magic = BLOCK_MAGIC;
-    free_list->size = HEAP_SIZE - sizeof(Block);
+    free_list->size = heap_size - sizeof(Block);
     free_list->is_free = 1;
-    free_list->next = 0;
+    free_list->next = NULL;
     
     heap_initialized = 1;
-    log_ok(HEAP_MODULE, "Heap initialized successfully");
+    log_ok(HEAP_MODULE, "Heap initialized: %llu MB available", heap_size / (1024 * 1024));
 }
 
-void* kmalloc(unsigned int size) {
+void* kmalloc(uint64_t size) {
     if (!heap_initialized) {
         init_heap();
     }
     
-    if (size == 0) {
-        log_warn(HEAP_MODULE, "Attempted to allocate 0 bytes");
-        return 0;
+    if (!heap_initialized) {
+        log_crit(HEAP_MODULE, "Heap initialization failed");
+        return NULL;
     }
     
-    unsigned int aligned_size = align(size);
+    if (size == 0) {
+        log_warn(HEAP_MODULE, "Attempted to allocate 0 bytes");
+        return NULL;
+    }
+    
+    uint64_t aligned_size = align(size);
     
     Block* current = free_list;
     
     while (current) {
         if (current->magic != BLOCK_MAGIC) {
             log_crit(HEAP_MODULE, "Heap corruption detected at block %p", current);
-            return 0;
+            return NULL;
         }
         
         if (current->is_free && current->size >= aligned_size) {
-            if (current->size >= aligned_size + sizeof(Block) + 8) {
+            // Split block if there's enough space for another block
+            if (current->size >= aligned_size + sizeof(Block) + 16) {
                 Block* new_block = (Block*)((char*)current + sizeof(Block) + aligned_size);
                 new_block->magic = BLOCK_MAGIC;
                 new_block->size = current->size - aligned_size - sizeof(Block);
@@ -78,8 +121,8 @@ void* kmalloc(unsigned int size) {
         current = current->next;
     }
     
-    log_err(HEAP_MODULE, "Out of memory: failed to allocate %d bytes", size);
-    return 0;
+    log_err(HEAP_MODULE, "Out of memory: failed to allocate %llu bytes", size);
+    return NULL;
 }
 
 void kfree(void* ptr) {
@@ -93,13 +136,15 @@ void kfree(void* ptr) {
         return;
     }
     
-    char* p = (char*)ptr;
-    if (p < heap || p >= heap + HEAP_SIZE) {
+    uint64_t heap_end = heap_start + hhdm_offset + heap_size;
+    uint64_t ptr_addr = (uint64_t)ptr;
+    
+    if (ptr_addr < (heap_start + hhdm_offset) || ptr_addr >= heap_end) {
         log_err(HEAP_MODULE, "Attempted to free pointer outside heap: %p", ptr);
         return;
     }
     
-    Block* block = (Block*)(p - sizeof(Block));
+    Block* block = (Block*)((char*)ptr - sizeof(Block));
     
     if (block->magic != BLOCK_MAGIC) {
         log_err(HEAP_MODULE, "Invalid block magic at %p (corruption or invalid pointer)", ptr);
@@ -113,11 +158,13 @@ void kfree(void* ptr) {
     
     block->is_free = 1;
     
+    // Coalesce with next block if it's free
     if (block->next && block->next->is_free) {
         block->size += sizeof(Block) + block->next->size;
         block->next = block->next->next;
     }
     
+    // Coalesce with previous block if it's free
     Block* current = free_list;
     while (current && current->next != block) {
         current = current->next;
@@ -127,7 +174,6 @@ void kfree(void* ptr) {
         current->size += sizeof(Block) + block->size;
         current->next = block->next;
     }
-    
 }
 
 void get_heap_stats(HeapStats* stats) {
@@ -141,7 +187,7 @@ void get_heap_stats(HeapStats* stats) {
         return;
     }
     
-    stats->total_size = HEAP_SIZE;
+    stats->total_size = heap_size;
     stats->used_size = 0;
     stats->free_size = 0;
     stats->num_blocks = 0;
@@ -176,5 +222,9 @@ void defrag_heap() {
         } else {
             current = current->next;
         }
+    }
+    
+    if (merged_count > 0) {
+        log_info(HEAP_MODULE, "Defragmentation merged %d blocks", merged_count);
     }
 }
