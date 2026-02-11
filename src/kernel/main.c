@@ -83,9 +83,10 @@ void kmain(void)
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
-    proc_create(test1, 0, 0);
-    proc_create(test2, 0, 0);
-    proc_start_scheduling(); // BROKEN
+    //proc_create(test1, 0, 0);
+    //proc_create(test2, 0, 0);
+    //proc_start_scheduling();
+    // TODO: Fix
 
     halt();
 }
