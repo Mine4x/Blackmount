@@ -1,6 +1,6 @@
 #include <drivers/input/keyboard/ps2.h>
-#include <arch/i686/io.h>
-#include <arch/i686/irq.h>
+#include <arch/x86_64/io.h>
+#include <arch/x86_64/irq.h>
 #include <debug.h>
 
 #define KEYBOARD_DATA_PORT 0x60
@@ -59,7 +59,7 @@ static void keyboard_buffer_push(char c) {
 
 // IRQ handler for keyboard (IRQ1)
 static void keyboard_irq_handler(Registers* regs) {
-    uint8_t scancode = i686_inb(KEYBOARD_DATA_PORT);
+    uint8_t scancode = x86_64_inb(KEYBOARD_DATA_PORT);
     
     // Check if this is a key release (bit 7 set)
     bool key_released = (scancode & 0x80) != 0;
@@ -133,7 +133,7 @@ void ps2_keyboard_init(void) {
     buffer_read_pos = 0;
     
     // Register IRQ1 handler for keyboard
-    i686_IRQ_RegisterHandler(1, keyboard_irq_handler);
+    x86_64_IRQ_RegisterHandler(1, keyboard_irq_handler);
 }
 
 void ps2_keyboard_bind(void (*ptr)()) {

@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <arch/i686/irq.h>
+#include <arch/x86_64/irq.h>
 
 void ps2_keyboard_init(void);
 char ps2_keyboard_getchar(void);

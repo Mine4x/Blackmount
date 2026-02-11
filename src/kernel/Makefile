@@ -1,5 +1,5 @@
-TARGET_ASMFLAGS += -f elf
-TARGET_CFLAGS += -ffreestanding -nostdlib -I.
+TARGET_ASMFLAGS += -f elf64
+TARGET_CFLAGS += -ffreestanding -nostdlib -I. -mcmodel=kernel
 TARGET_LIBS += -lgcc
 TARGET_LINKFLAGS += -T linker.ld -nostdlib
 
@@ -12,7 +12,7 @@ SOURCES_C = $(wildcard *.c) \
 			$(wildcard */*.c) \
 			$(wildcard */*/*.c) \
 			$(wildcard */*/*/*.c) \
-			arch/i686/isrs_gen.c
+			arch/x86_64/isrs_gen.c
 
 OBJECTS_C = $(patsubst %.c, $(BUILD_DIR)/kernel/c/%.obj, $(SOURCES_C))
 
@@ -20,7 +20,7 @@ HEADERS_ASM = $(wildcard *.inc) \
 			  $(wildcard */*.inc) \
 			  $(wildcard */*/*.inc) \
 			  $(wildcard */*/*/*.inc) \
-			  arch/i686/isrs_gen.inc
+			  arch/x86_64/isrs_gen.inc
 
 SOURCES_ASM = $(wildcard *.asm) \
 			  $(wildcard */*.asm) \
@@ -50,7 +50,7 @@ $(BUILD_DIR)/kernel/asm/%.obj: %.asm $(HEADERS_ASM)
 	@$(TARGET_ASM) $(TARGET_ASMFLAGS) -o $@ $<
 	@echo "--> Compiled: " $<
 
-arch/i686/isrs_gen.c arch/i686/isrs_gen.inc:
+arch/x86_64/isrs_gen.c arch/x86_64/isrs_gen.inc:
 	@$(SOURCE_DIR)/build_tools/generate_isrs.sh $@
 
 clean:

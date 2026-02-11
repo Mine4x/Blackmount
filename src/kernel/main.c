@@ -2,32 +2,56 @@
 #include "stdio.h"
 #include "memory.h"
 #include <hal/hal.h>
-#include <arch/i686/irq.h>
+#include <arch/x86_64/irq.h>
 #include <debug.h>
 #include <heap.h>
 #include <drivers/fs/ramdisk.h>
 #include <drivers/driverman.h>
 #include <drivers/disk/ata.h>
 #include <timer/timer.h>
-#include <arch/i686/paging.h>
-#include <arch/i686/pagefault.h>
+#include <arch/x86_64/paging.h>
+#include <arch/x86_64/pagefault.h>
 #include <proc/proc.h>
 #include <drivers/disk/floppy.h>
 #include <block/block.h>
 #include <drivers/fs/fat/fat.h>
 #include <block/block_floppy.h>
 #include <config/config.h>
-#include <arch/i686/syscalls.h>
+#include <arch/x86_64/syscalls.h>
 #include <syscalls/scman.h>
+#include "halt.h"
+#include <arch/x86_64/io.h>
+#include <limine/limine_req.h>
+#include <fb/framebuffer.h>
 
 extern uint8_t __bss_start;
-extern uint8_t __end;
+extern uint8_t __bss_end;
 
-void __attribute__((section(".entry"))) start(uint16_t bootDrive)
-{
-    memset(&__bss_start, 0, (&__end) - (&__bss_start));
+void test1() {
+    while (true)
+    {
+        log_info("TEST", "Test 1");
+    }
+    
+}
+
+void test2() {
+    while (true)
+    {
+        log_info("TEST", "Test 2");
+    }
+    
+}
+
+
+void kmain(void)
+{   
+    memset(&__bss_start, 0, (&__bss_end) - (&__bss_start));
     log_ok("Boot", "Cleared BSS");
 
+    limine_init();
+    log_ok("Boot", "Populated limine info");
+    
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
 
@@ -43,29 +67,25 @@ void __attribute__((section(".entry"))) start(uint16_t bootDrive)
     paging_init();
     log_ok("Boot", "Initialized Paging");
 
-    i686_PageFault_Initialize();
+    x86_64_PageFault_Initialize();
     log_ok("Boot", "Initialized Pagefault handler");
-    
+
     proc_init();
     log_ok("Boot", "Initialized Multitasking");
-    
-    log_info("Kernel", "Mounting Floppy bootdrive");
-    block_device_t* boot_block = floppy_create_blockdev("boot", bootDrive);
-    fat_fs_t* boot_fs = fat_mount(boot_block);
-    
-    log_info("Kernel", "Loading Config from boot drive");
-    loadConfig(boot_fs);
     
     log_info("Kernel", "Loading syscalls");
     syscalls_init();
     register_syscalls();
 
+    x86_64_EnableInterrupts();
+
     log_ok("Kernel", "Initialized all imortant systems");
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
-    proc_start_scheduling();
+    proc_create(test1, 0, 0);
+    proc_create(test2, 0, 0);
+    proc_start_scheduling(); // BROKEN
 
-end:
-    for (;;);
+    halt();
 }

@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <arch/x86_64/irq.h>
 
 // Floppy disk geometry
 typedef struct {
@@ -21,7 +22,7 @@ bool floppy_read_sectors(uint8_t drive, uint32_t lba, uint8_t count, void* buffe
 // Write sectors to floppy
 bool floppy_write_sectors(uint8_t drive, uint32_t lba, uint8_t count, const void* buffer);
 
-void floppy_irq_handler(void);
+void floppy_irq_handler(Registers* regs);
 
 // Get geometry info
 floppy_geometry_t floppy_get_geometry(uint8_t drive);
