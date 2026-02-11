@@ -1,6 +1,6 @@
 include build_scripts/config.mk
 
-.PHONY: all kernel clean always tools_fat iso_image
+.PHONY: all kernel clean always tools_fat harddisk_image iso_image
 
 all: iso_image tools_fat
 
@@ -9,9 +9,9 @@ include build_scripts/toolchain.mk
 #
 # ISO image
 #
-iso_image: $(BUILD_DIR)/bmos.iso
+iso_image: $(BUILD_DIR)/nbos.iso
 
-$(BUILD_DIR)/bmos.iso: kernel
+$(BUILD_DIR)/nbos.iso: kernel
 	@mkdir -p $(BUILD_DIR)/iso
 	@echo "--> Copying target files (including Limine)..."
 	@cp -r target/* $(BUILD_DIR)/iso/
@@ -26,6 +26,21 @@ $(BUILD_DIR)/bmos.iso: kernel
 		$(BUILD_DIR)/iso \
 		-o $@
 	@echo "--> ISO created: $@"
+
+#
+# Bootloader
+#
+bootloader: stage1 stage2
+
+stage1: $(BUILD_DIR)/stage1.bin
+
+$(BUILD_DIR)/stage1.bin: always
+	@$(MAKE) -C src/bootloader/stage1 BUILD_DIR=$(abspath $(BUILD_DIR))
+
+stage2: $(BUILD_DIR)/stage2.bin
+
+$(BUILD_DIR)/stage2.bin: always
+	@$(MAKE) -C src/bootloader/stage2 BUILD_DIR=$(abspath $(BUILD_DIR))
 
 #
 # Kernel
@@ -54,5 +69,7 @@ always:
 # Clean
 #
 clean:
+	@$(MAKE) -C src/bootloader/stage1 BUILD_DIR=$(abspath $(BUILD_DIR)) clean
+	@$(MAKE) -C src/bootloader/stage2 BUILD_DIR=$(abspath $(BUILD_DIR)) clean
 	@$(MAKE) -C src/kernel BUILD_DIR=$(abspath $(BUILD_DIR)) clean
 	@rm -rf $(BUILD_DIR)/*
