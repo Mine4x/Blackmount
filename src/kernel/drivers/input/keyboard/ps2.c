@@ -59,6 +59,7 @@ static void keyboard_buffer_push(char c) {
 
 // IRQ handler for keyboard (IRQ1)
 static void keyboard_irq_handler(Registers* regs) {
+    log_info("PS2", "Called PS2 IRQ");
     uint8_t scancode = x86_64_inb(KEYBOARD_DATA_PORT);
     
     // Check if this is a key release (bit 7 set)
@@ -123,6 +124,7 @@ bool ps2_keyboard_has_input(void) {
 
 // Initialize keyboard
 void ps2_keyboard_init(void) {
+    log_info("PS2", "Called PS2 init");
     // Clear keyboard state
     keyboard_state.shift_pressed = false;
     keyboard_state.ctrl_pressed = false;
@@ -134,6 +136,7 @@ void ps2_keyboard_init(void) {
     
     // Register IRQ1 handler for keyboard
     x86_64_IRQ_RegisterHandler(1, keyboard_irq_handler);
+    x86_64_IRQ_Unmask(1);
 }
 
 void ps2_keyboard_bind(void (*ptr)()) {
