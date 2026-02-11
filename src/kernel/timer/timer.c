@@ -11,10 +11,9 @@
 volatile uint32_t g_pit_ticks = 0;
 
 static void timer_irq_handler(Registers* regs) {
-    log_debug("Timer", "Timer Called!");
     g_pit_ticks++;
 
-    floppy_irq_handler();
+    //floppy_irq_handler();
 
     proc_update_time(1);
     proc_schedule();

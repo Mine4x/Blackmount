@@ -1,6 +1,7 @@
 #include "floppy.h"
 #include <debug.h>
 #include <string.h>
+#include <arch/x86_64/irq.h>
 
 // FDC I/O Ports
 #define FDC_DOR  0x3F2  // Digital Output Register
@@ -252,7 +253,7 @@ static bool fdc_rw_operation(uint8_t drive, uint8_t cyl, uint8_t head,
     return true;
 }
 
-void floppy_irq_handler(void) {
+void floppy_irq_handler(Registers* regs) {
     g_irq_received = true;
 }
 
@@ -278,7 +279,11 @@ bool floppy_init(void) {
     if (!fdc_calibrate(0)) {
         log_warn("FDC", "Drive 0 calibration failed - may not be present");
     }
-    
+
+    log_info("FDC", "Registering floppy IRQ");
+    x86_64_IRQ_RegisterHandler(6, floppy_irq_handler);
+    x86_64_IRQ_Unmask(6);
+
     log_ok("FDC", "Initialization complete");
     return true;
 }

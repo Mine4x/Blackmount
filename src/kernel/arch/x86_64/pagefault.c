@@ -17,17 +17,15 @@ void x86_64_PageFault_Handler(Registers* regs) {
     uint64_t faulting_address = read_cr2();
     uint64_t err = regs->error;
     
-    // Parse error code bits
-    int present = err & 0x1;    // 0 = not present, 1 = protection fault
-    int write = err & 0x2;      // 0 = read, 1 = write
-    int user = err & 0x4;       // 0 = kernel, 1 = user mode
-    int reserved = err & 0x8;   // 1 = reserved bits set
-    int ifetch = err & 0x10;    // 1 = instruction fetch
+    int present  = err & 0x1;
+    int write    = err & 0x2;
+    int user     = err & 0x4;
+    int reserved = err & 0x8;
+    int ifetch   = err & 0x10;
     
-    log_crit(MODULE, "Page fault at RIP=%016lx", regs->rip);
+    log_crit(MODULE, "Page fault at RIP=0x%016lx", regs->rip);
     log_crit(MODULE, "Faulting address: 0x%016lx", faulting_address);
     
-    // Build detailed error message
     log_err(MODULE, "Cause: %s %s in %s%s%s",
             present ? "Protection violation" : "Page not present",
             write ? "write" : "read",
@@ -35,30 +33,30 @@ void x86_64_PageFault_Handler(Registers* regs) {
             reserved ? " (reserved bits set)" : "",
             ifetch ? " during instruction fetch" : "");
     
-    // Print register state
     log_debug(MODULE, "Register dump:");
-    log_debug(MODULE, "  RAX=0x%016lx  RBX=0x%016lx  RCX=0x%016lx  RDX=0x%016lx", 
+    log_debug(MODULE, "  RAX=0x%016lx  RBX=0x%016lx  RCX=0x%016lx  RDX=0x%016lx",
               regs->rax, regs->rbx, regs->rcx, regs->rdx);
     log_debug(MODULE, "  RSI=0x%016lx  RDI=0x%016lx  RBP=0x%016lx  RSP=0x%016lx",
               regs->rsi, regs->rdi, regs->rbp, regs->rsp);
-    log_debug(MODULE, "  R8=0x%016lx   R9=0x%016lx   R10=0x%016lx  R11=0x%016lx",
+    log_debug(MODULE, "  R8 =0x%016lx  R9 =0x%016lx  R10=0x%016lx  R11=0x%016lx",
               regs->r8, regs->r9, regs->r10, regs->r11);
     log_debug(MODULE, "  R12=0x%016lx  R13=0x%016lx  R14=0x%016lx  R15=0x%016lx",
               regs->r12, regs->r13, regs->r14, regs->r15);
-    log_debug(MODULE, "  RIP=0x%016lx  RFLAGS=0x%016lx", regs->rip, regs->rflags);
-    log_debug(MODULE, "  CS=0x%04lx  DS=0x%04lx  ES=0x%04lx  FS=0x%04lx  GS=0x%04lx  SS=0x%04lx", 
-              regs->cs, regs->ds, regs->es, regs->fs, regs->gs, regs->ss);
+    log_debug(MODULE, "  RIP=0x%016lx  RFLAGS=0x%016lx",
+              regs->rip, regs->rflags);
+    log_debug(MODULE, "  CS=0x%04lx  SS=0x%04lx",
+              regs->cs, regs->ss);
     log_debug(MODULE, "  Error code: 0x%lx", err);
     
     log_crit(MODULE, "Cannot recover - halting system");
     printf("\nKERNEL PANIC: Page Fault at 0x%016lx\n", faulting_address);
     
-    // Halt the system
     __asm__ volatile("cli");
-    for(;;) {
+    for (;;) {
         __asm__ volatile("hlt");
     }
 }
+
 
 void x86_64_DoubleFault_Handler(Registers* regs) {
     log_crit(MODULE_DF, "Double fault exception!");

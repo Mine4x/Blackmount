@@ -74,8 +74,10 @@ void x86_64_ISR_Handler(Registers* regs)
                  regs->r12, regs->r13, regs->r14, regs->r15);
         log_crit(MODULE, "  rip=%016lx  rflags=%016lx",
                  regs->rip, regs->rflags);
-        log_crit(MODULE, "  cs=%04x  ds=%04x  es=%04x  fs=%04x  gs=%04x  ss=%04x",
-                 regs->cs, regs->ds, regs->es, regs->fs, regs->gs, regs->ss);
+        log_crit(MODULE,
+    "  cs=%04lx  ss=%04lx  rflags=%016lx",
+     regs->cs, regs->ss, regs->rflags);
+
         log_crit(MODULE, "  interrupt=%x  errorcode=%lx", regs->interrupt, regs->error);
         log_crit(MODULE, "KERNEL PANIC!");
         printf("KERNEL PANIC!\n");

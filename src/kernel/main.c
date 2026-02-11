@@ -21,18 +21,35 @@
 #include <syscalls/scman.h>
 #include "halt.h"
 #include <arch/x86_64/io.h>
+#include <limine/limine_req.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 
-void idle(void) {
-    proc_yield();
+void test1() {
+    while (true)
+    {
+        log_info("TEST", "Test 1");
+    }
+    
 }
+
+void test2() {
+    while (true)
+    {
+        log_info("TEST", "Test 2");
+    }
+    
+}
+
 
 void kmain(void)
 {   
     memset(&__bss_start, 0, (&__bss_end) - (&__bss_start));
     log_ok("Boot", "Cleared BSS");
+
+    limine_init();
+    log_ok("Boot", "Populated limine info");
 
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
@@ -59,12 +76,15 @@ void kmain(void)
     syscalls_init();
     register_syscalls();
 
+    x86_64_EnableInterrupts();
+
     log_ok("Kernel", "Initialized all imortant systems");
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
-    proc_create(idle, 0, 0);
-    proc_start_scheduling();
+    proc_create(test1, 0, 0);
+    proc_create(test2, 0, 0);
+    proc_start_scheduling(); // BROKEN
 
     halt();
 }

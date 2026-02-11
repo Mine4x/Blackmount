@@ -22,75 +22,44 @@ x86_64_ISR%1:
 %include "arch/x86_64/isrs_gen.inc"
 
 isr_common:
-    ; Save all registers (pusha doesn't exist in 64-bit)
-    push rax
-    push rbx
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-    push rbp
-    push r8
-    push r9
-    push r10
-    push r11
-    push r12
-    push r13
-    push r14
+    cld
+
     push r15
-    
-    ; Save segment registers
-    xor rax, rax
-    mov ax, ds
+    push r14
+    push r13
+    push r12
+    push r11
+    push r10
+    push r9
+    push r8
+    push rdi
+    push rsi
+    push rbp
+    push rdx
+    push rcx
+    push rbx
     push rax
-    mov ax, es
-    push rax
-    mov ax, fs
-    push rax
-    mov ax, gs
-    push rax
-    
-    ; Load kernel data segment
-    mov ax, 0x10        ; use kernel data segment
-    mov ds, ax
-    mov es, ax
-    ; Note: fs and gs are typically not modified in x86_64
-    
-    ; Align stack to 16 bytes before call (required by x86_64 ABI)
-    mov rdi, rsp        ; pass pointer to stack as first argument
-    and rsp, ~0x0F      ; align to 16 bytes
-    
+
+    mov rdi, rsp
+    sub rsp, 8
     call x86_64_ISR_Handler
-    
-    ; Restore original stack pointer (stored in registers struct)
-    mov rsp, rdi
-    
-    ; Restore segment registers
+    add rsp, 8
+
     pop rax
-    mov gs, ax
-    pop rax
-    mov fs, ax
-    pop rax
-    mov es, ax
-    pop rax
-    mov ds, ax
-    
-    ; Restore all registers
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rbp
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
     pop rbx
-    pop rax
-    
-    add rsp, 16         ; remove error code and interrupt number
-    iretq               ; 64-bit interrupt return (pops cs, rip, rflags, ss, rsp)
+    pop rcx
+    pop rdx
+    pop rbp
+    pop rsi
+    pop rdi
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+
+    add rsp, 16        ; error code + interrupt number
+    iretq
