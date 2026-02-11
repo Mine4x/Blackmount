@@ -1,4 +1,7 @@
 #include "limine_req.h"
+#include <fb/framebuffer.h>
+#include <fb/textrenderer.h>
+#include <debug.h>
 
 __attribute__((used, section(".limine_requests")))
 volatile struct limine_bootloader_info_request bootloader_info_request = LIMINE_BOOTLOADER_INFO_REQUEST;
@@ -22,6 +25,7 @@ struct limine_framebuffer_response* framebuffer = 0;
 struct limine_smp_response* smp_info = 0;
 
 void limine_init(void) {
+
     if (bootloader_info_request.response)
         bootloader_info = bootloader_info_request.response;
 
@@ -31,8 +35,17 @@ void limine_init(void) {
     if (memmap_request.response)
         memmap = memmap_request.response;
 
-    if (framebuffer_request.response)
+    if (framebuffer_request.response) {
         framebuffer = framebuffer_request.response;
+
+        if (framebuffer->framebuffer_count > 0) {
+            fb_init(framebuffer);
+            fb_clear(0x000000);
+            tr_init(0xFFFFFF, 0x000000);
+        } else {
+            log_crit("Limine", "UNABLE TO GET FB");
+        }
+    }
 
     if (smp_request.response)
         smp_info = smp_request.response;

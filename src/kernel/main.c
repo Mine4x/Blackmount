@@ -22,6 +22,7 @@
 #include "halt.h"
 #include <arch/x86_64/io.h>
 #include <limine/limine_req.h>
+#include <fb/framebuffer.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -50,7 +51,7 @@ void kmain(void)
 
     limine_init();
     log_ok("Boot", "Populated limine info");
-
+    
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
 

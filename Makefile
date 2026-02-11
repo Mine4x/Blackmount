@@ -1,6 +1,6 @@
 include build_scripts/config.mk
 
-.PHONY: all floppy_image kernel bootloader clean always tools_fat harddisk_image iso_image
+.PHONY: all kernel clean always tools_fat harddisk_image iso_image
 
 all: iso_image tools_fat
 
