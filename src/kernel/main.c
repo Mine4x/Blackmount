@@ -52,6 +52,9 @@ void kmain(void)
 
     limine_init();
     log_ok("Boot", "Populated limine info");
+
+    loadConfig();
+    log_ok("Kernel", "Loaded Config");
     
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
@@ -77,9 +80,6 @@ void kmain(void)
     log_info("Kernel", "Loading syscalls");
     syscalls_init();
     register_syscalls();
-
-    loadConfig();
-    log_ok("Kernel", "Loaded Config");
 
     x86_64_EnableInterrupts();
 

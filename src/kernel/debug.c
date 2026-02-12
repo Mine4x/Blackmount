@@ -1,6 +1,7 @@
 #include "debug.h"
 #include <stdio.h>
 #include <config/config.h>
+#include <util/str_to_int.h>
 
 static const char* const g_LogSeverityColors[] =
 {
@@ -21,29 +22,6 @@ static const int* const g_LogVLevels[] =
     [LVL_CRITICAL]     = -1,
     [LVL_OK]           = 2
 };
-
-int str_to_int(const char* s) {
-    int result = 0;
-    int sign = 1;
-    uint32_t i = 0;
-
-    while (s[i] == ' ' || s[i] == '\t') i++;
-
-    if (s[i] == '-') {
-        sign = -1;
-        i++;
-    } else if (s[i] == '+') {
-        i++;
-    }
-
-    while (s[i] >= '0' && s[i] <= '9') {
-        result = result * 10 + (s[i] - '0');
-        i++;
-    }
-
-    return result * sign;
-}
-
 
 static const char* const g_ColorReset = "\033[0m";
 

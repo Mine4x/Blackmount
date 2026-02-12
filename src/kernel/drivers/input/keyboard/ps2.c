@@ -59,7 +59,6 @@ static void keyboard_buffer_push(char c) {
 
 // IRQ handler for keyboard (IRQ1)
 static void keyboard_irq_handler(Registers* regs) {
-    log_info("PS2", "Called PS2 IRQ");
     uint8_t scancode = x86_64_inb(KEYBOARD_DATA_PORT);
     
     // Check if this is a key release (bit 7 set)
