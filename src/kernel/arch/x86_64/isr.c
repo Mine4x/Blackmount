@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <debug.h>
+#include <panic/panic.h>
 
 #define MODULE          "ISR"
 

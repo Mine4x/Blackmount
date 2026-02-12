@@ -23,6 +23,7 @@
 #include <arch/x86_64/io.h>
 #include <limine/limine_req.h>
 #include <fb/framebuffer.h>
+#include <panic/panic.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
