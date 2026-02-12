@@ -23,7 +23,6 @@
 #include <arch/x86_64/io.h>
 #include <limine/limine_req.h>
 #include <fb/framebuffer.h>
-#include <panic/panic.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -69,7 +68,7 @@ void kmain(void)
     log_ok("Kernel", "Initialized all imortant systems");
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
-
+    
     proc_start_scheduling();
 
     halt();
