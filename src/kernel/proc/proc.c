@@ -3,8 +3,10 @@
 #include <string.h>
 #include <debug.h>
 
+// TODO: Make this preemtive.
+
 #define MAX_PROCESSES 64
-#define PROC_STACK_SIZE 4096
+#define PROC_STACK_SIZE 8192
 
 // Process states
 typedef enum {
@@ -14,12 +16,12 @@ typedef enum {
     PROC_STATE_BLOCKED,
     PROC_STATE_ZOMBIE
 } ProcState;
-
-// CPU context for saving/restoring registers
 typedef struct {
-    uint32_t eax, ebx, ecx, edx;
-    uint32_t esi, edi, esp, ebp;
-    uint32_t eip, eflags;
+    uint64_t rax, rbx, rcx, rdx;
+    uint64_t rsi, rdi, rsp, rbp;
+    uint64_t rip, rflags;
+    uint64_t r8, r9, r10, r11;
+    uint64_t r12, r13, r14, r15;
 } Context;
 
 // Internal process structure
@@ -41,8 +43,9 @@ static int scheduling_enabled = 0;
 extern void context_switch(Context* old_ctx, Context* new_ctx);
 
 static void idle(void) {
-    while (1)
-    {}
+    while (1) {
+        __asm__ __volatile__("hlt");  // Halt until next interrupt
+    }
 }
 
 // Process entry wrapper
@@ -57,7 +60,9 @@ static void proc_entry_wrapper(void) {
         proc_kill(proc_table[current_proc_index].proc.PID);
     }
     proc_yield();
-    while(1);
+    while(1) {
+        __asm__ __volatile__("hlt");
+    }
 }
 
 void proc_init(void) {
@@ -104,16 +109,16 @@ int proc_create(void (*entry_point)(void), uint32_t priority, uint32_t parent_pi
     uintptr_t stack_top = (uintptr_t)(pcb->stack + PROC_STACK_SIZE);
     stack_top &= ~0xF;
     
-    stack_top -= 4;
-    *(uint32_t*)stack_top = 0;
+    stack_top -= 8;
+    *(uint64_t*)stack_top = 0;
     
     pcb->proc.SP = stack_top;
     
     memset(&pcb->context, 0, sizeof(Context));
-    pcb->context.esp = stack_top;
-    pcb->context.ebp = 0;
-    pcb->context.eip = (uint32_t)proc_entry_wrapper;
-    pcb->context.eflags = 0x202;
+    pcb->context.rsp = stack_top;
+    pcb->context.rbp = 0;
+    pcb->context.rip = (uint64_t)proc_entry_wrapper;
+    pcb->context.rflags = 0x202;
     
     pcb->entry_point = entry_point;
     pcb->state = PROC_STATE_READY;
@@ -158,33 +163,142 @@ int proc_kill(uint32_t pid) {
     return -1;
 }
 
+static int find_next_process(void) {
+    int start = current_proc_index;
+    int next = (current_proc_index + 1) % MAX_PROCESSES;
+    
+    while (next != start) {
+        if (proc_table[next].state == PROC_STATE_READY) {
+            return next;
+        }
+        next = (next + 1) % MAX_PROCESSES;
+    }
+    
+    if (current_proc_index >= 0 && 
+        proc_table[current_proc_index].state == PROC_STATE_RUNNING) {
+        return current_proc_index;
+    }
+    
+    return -1;
+}
+
+void proc_schedule_interrupt_safe(
+    uint64_t* rax, uint64_t* rbx, uint64_t* rcx, uint64_t* rdx,
+    uint64_t* rsi, uint64_t* rdi, uint64_t* rsp, uint64_t* rbp,
+    uint64_t* rip, uint64_t* rflags,
+    uint64_t* r8, uint64_t* r9, uint64_t* r10, uint64_t* r11,
+    uint64_t* r12, uint64_t* r13, uint64_t* r14, uint64_t* r15)
+{
+    if (!scheduling_enabled) {
+        return;
+    }
+    
+    int old_proc = current_proc_index;
+    
+    if (old_proc >= 0 && old_proc < MAX_PROCESSES) {
+        if (proc_table[old_proc].state == PROC_STATE_RUNNING) {
+            proc_table[old_proc].context.rax = *rax;
+            proc_table[old_proc].context.rbx = *rbx;
+            proc_table[old_proc].context.rcx = *rcx;
+            proc_table[old_proc].context.rdx = *rdx;
+            proc_table[old_proc].context.rsi = *rsi;
+            proc_table[old_proc].context.rdi = *rdi;
+            proc_table[old_proc].context.rsp = *rsp;
+            proc_table[old_proc].context.rbp = *rbp;
+            proc_table[old_proc].context.rip = *rip;
+            proc_table[old_proc].context.rflags = *rflags;
+            proc_table[old_proc].context.r8 = *r8;
+            proc_table[old_proc].context.r9 = *r9;
+            proc_table[old_proc].context.r10 = *r10;
+            proc_table[old_proc].context.r11 = *r11;
+            proc_table[old_proc].context.r12 = *r12;
+            proc_table[old_proc].context.r13 = *r13;
+            proc_table[old_proc].context.r14 = *r14;
+            proc_table[old_proc].context.r15 = *r15;
+            
+            proc_table[old_proc].state = PROC_STATE_READY;
+        }
+    }
+    
+    int next = find_next_process();
+    
+    if (next >= 0 && next < MAX_PROCESSES) {
+        current_proc_index = next;
+        proc_table[next].state = PROC_STATE_RUNNING;
+        
+        *rax = proc_table[next].context.rax;
+        *rbx = proc_table[next].context.rbx;
+        *rcx = proc_table[next].context.rcx;
+        *rdx = proc_table[next].context.rdx;
+        *rsi = proc_table[next].context.rsi;
+        *rdi = proc_table[next].context.rdi;
+        *rsp = proc_table[next].context.rsp;
+        *rbp = proc_table[next].context.rbp;
+        *rip = proc_table[next].context.rip;
+        *rflags = proc_table[next].context.rflags;
+        *r8 = proc_table[next].context.r8;
+        *r9 = proc_table[next].context.r9;
+        *r10 = proc_table[next].context.r10;
+        *r11 = proc_table[next].context.r11;
+        *r12 = proc_table[next].context.r12;
+        *r13 = proc_table[next].context.r13;
+        *r14 = proc_table[next].context.r14;
+        *r15 = proc_table[next].context.r15;
+    }
+}
+
+void proc_schedule_interrupt(void* interrupt_frame) {
+    if (!scheduling_enabled) {
+        return;
+    }
+    
+    uint64_t* regs = (uint64_t*)interrupt_frame;
+    
+    proc_schedule_interrupt_safe(
+        &regs[0],  // rax
+        &regs[1],  // rbx
+        &regs[2],  // rcx
+        &regs[3],  // rdx
+        &regs[4],  // rsi
+        &regs[5],  // rdi
+        &regs[6],  // rsp
+        &regs[7],  // rbp
+        &regs[8],  // rip
+        &regs[9],  // rflags
+        &regs[10], // r8
+        &regs[11], // r9
+        &regs[12], // r10
+        &regs[13], // r11
+        &regs[14], // r12
+        &regs[15], // r13
+        &regs[16], // r14
+        &regs[17]  // r15
+    );
+}
+
 void proc_schedule(void) {
     if (!scheduling_enabled) {
         return;
     }
     
     int old_proc = current_proc_index;
-    int start = current_proc_index;
-    int next = (current_proc_index + 1) % MAX_PROCESSES;
     
-    while (next != start) {
-        if (proc_table[next].state == PROC_STATE_READY) {
-            current_proc_index = next;
-            proc_table[next].state = PROC_STATE_RUNNING;
-            
-            if (old_proc >= 0 && proc_table[old_proc].state == PROC_STATE_RUNNING) {
-                proc_table[old_proc].state = PROC_STATE_READY;
-            }
-            
-            if (old_proc >= 0 && old_proc != next) {
-                context_switch(&proc_table[old_proc].context, 
-                             &proc_table[next].context);
-            }
-            return;
+    // Find next process
+    int next = find_next_process();
+    
+    if (next >= 0 && next < MAX_PROCESSES) {
+        current_proc_index = next;
+        proc_table[next].state = PROC_STATE_RUNNING;
+        
+        if (old_proc >= 0 && proc_table[old_proc].state == PROC_STATE_RUNNING) {
+            proc_table[old_proc].state = PROC_STATE_READY;
         }
-        next = (next + 1) % MAX_PROCESSES;
+        
+        if (old_proc >= 0 && old_proc != next) {
+            context_switch(&proc_table[old_proc].context, 
+                         &proc_table[next].context);
+        }
     }
-    
 }
 
 void proc_yield(void) {

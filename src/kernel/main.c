@@ -28,23 +28,6 @@
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 
-void test1() {
-    while (true)
-    {
-        log_info("TEST", "Test 1");
-    }
-    
-}
-
-void test2() {
-    while (true)
-    {
-        log_info("TEST", "Test 2");
-    }
-    
-}
-
-
 void kmain(void)
 {   
     memset(&__bss_start, 0, (&__bss_end) - (&__bss_start));
@@ -87,10 +70,7 @@ void kmain(void)
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
-    //proc_create(test1, 0, 0);
-    //proc_create(test2, 0, 0);
-    //proc_start_scheduling();
-    // TODO: Fix
+    proc_start_scheduling();
 
     halt();
 }
