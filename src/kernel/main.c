@@ -77,6 +77,9 @@ void kmain(void)
     syscalls_init();
     register_syscalls();
 
+    loadConfig();
+    log_ok("Kernel", "Loaded Config");
+
     x86_64_EnableInterrupts();
 
     log_ok("Kernel", "Initialized all imortant systems");
