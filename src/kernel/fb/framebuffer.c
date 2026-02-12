@@ -34,11 +34,17 @@ void fb_putpixel(uint32_t x, uint32_t y, uint32_t color) {
 }
 
 void fb_clear(uint32_t color) {
-    if (!fb_addr)
+    if (!fb_addr || fb_bpp != 32)
         return;
-    for (uint32_t y = 0; y < fb_height; y++)
-        for (uint32_t x = 0; x < fb_width; x++)
-            fb_putpixel(x, y, color);
+
+    uint32_t *fb32 = (uint32_t*)fb_addr;
+    uint32_t pixels_per_row = fb_pitch / 4;
+
+    for (uint32_t y = 0; y < fb_height; y++) {
+        for (uint32_t x = 0; x < fb_width; x++) {
+            fb32[y * pixels_per_row + x] = color;
+        }
+    }
 }
 
 uint32_t fb_get_width(void)  { return fb_width; }
