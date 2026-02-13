@@ -1,4 +1,5 @@
 #include "limine_req.h"
+#include <fb/font/fontloader.h>
 
 #include "limine.h"
 #include <stdint.h>
@@ -54,18 +55,6 @@ void limine_init(void) {
         memmap = memmap_request.response;
     }
 
-    if (framebuffer_request.response) {
-        framebuffer = framebuffer_request.response;
-
-        if (framebuffer->framebuffer_count > 0) {
-            fb_init(framebuffer);
-            fb_clear(0x000000);
-            tr_init(0xFFFFFF, 0x000000);
-        } else {
-            log_crit("Limine", "UNABLE TO GET FRAMEBUFFER");
-        }
-    }
-
     if (smp_request.response) {
         smp_info = smp_request.response;
     }
@@ -75,6 +64,25 @@ void limine_init(void) {
 
         log_info("Limine", "Modules detected");
         log_info("Limine", "Module count: %d", modules->module_count);
+    }
+
+    if (framebuffer_request.response) {
+        framebuffer = framebuffer_request.response;
+
+        if (framebuffer->framebuffer_count > 0) {
+            fb_init(framebuffer);
+            fb_clear(0x000000);
+            font_init();
+            if (font_load("default.bdf")) {
+                log_ok("Fonts", "Loaded default font");
+            } else {
+                log_crit("Fonts", "Couln't load default fonts");
+                log_info("Fonts", "Using fallback font.");
+            }
+            tr_init(0xFFFFFF, 0x000000);
+        } else {
+            log_crit("Limine", "UNABLE TO GET FRAMEBUFFER");
+        }
     }
 }
 

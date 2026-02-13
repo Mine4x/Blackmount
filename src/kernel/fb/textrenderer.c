@@ -1,18 +1,13 @@
 #include "textrenderer.h"
 #include "framebuffer.h"
-#include "std_font.h"
+#include "font/fontloader.h"
 #include <stdint.h>
 #include <stdbool.h>
 
-#define FONT_WIDTH  8
-#define FONT_HEIGHT 8
-
 static uint32_t cursor_x = 0;
 static uint32_t cursor_y = 0;
-
 static uint32_t fg_color = 0xFFFFFF;
 static uint32_t bg_color = 0x000000;
-
 static uint32_t screen_width;
 static uint32_t screen_height;
 
@@ -22,8 +17,8 @@ static int tr_escape_pos = 0;
 
 static void handle_escape_sequence(void) {
     tr_escape_buf[tr_escape_pos] = 0;
+    
     int fg = -1, bg = -1;
-
     if (tr_escape_pos >= 2 && tr_escape_buf[tr_escape_pos - 1] == 'm') {
         int val = 0;
         int i = 0;
@@ -57,23 +52,25 @@ static void handle_escape_sequence(void) {
             i++;
         }
     }
-
+    
     if (fg != -1 || bg != -1)
         tr_set_color(fg != -1 ? fg : fg_color, bg != -1 ? bg : bg_color);
-
+    
     tr_escape_mode = false;
     tr_escape_pos = 0;
 }
 
 static void draw_char(uint32_t px, uint32_t py, char c) {
     unsigned char uc = (unsigned char)c;
-    if (uc >= 128) uc = '?'; // fallback
-
-    const uint8_t *glyph = std_font[uc];
-
-    for (uint32_t y = 0; y < FONT_HEIGHT; y++) {
+    const font_t *font = font_get_current();
+    const uint8_t *glyph = font_get_glyph(uc);
+    
+    uint8_t font_width = font->width;
+    uint8_t font_height = font->height;
+    
+    for (uint32_t y = 0; y < font_height; y++) {
         uint8_t row = glyph[y];
-        for (uint32_t x = 0; x < FONT_WIDTH; x++) {
+        for (uint32_t x = 0; x < font_width; x++) {
             if (row & (0x80 >> x)) {
                 fb_putpixel(px + x, py + y, fg_color);
             } else {
@@ -86,8 +83,9 @@ static void draw_char(uint32_t px, uint32_t py, char c) {
 static void newline(void) {
     cursor_x = 0;
     cursor_y++;
-
-    if ((cursor_y + 1) * FONT_HEIGHT >= screen_height) {
+    
+    const font_t *font = font_get_current();
+    if ((cursor_y + 1) * font->height >= screen_height) {
         cursor_y = 0;
     }
 }
@@ -95,10 +93,8 @@ static void newline(void) {
 void tr_init(uint32_t fg, uint32_t bg) {
     fg_color = fg;
     bg_color = bg;
-
     screen_width  = fb_get_width();
     screen_height = fb_get_height();
-
     cursor_x = 0;
     cursor_y = 0;
 }
@@ -118,30 +114,31 @@ void tr_putc(char c) {
         }
         return;
     }
-
+    
     if (c == '\x1b') {
         tr_escape_mode = true;
         tr_escape_pos = 0;
         return;
     }
-
+    
     if (c == '\n') {
         newline();
         return;
     }
-
+    
     if (c == '\r') {
         cursor_x = 0;
         return;
     }
-
-    uint32_t px = cursor_x * FONT_WIDTH;
-    uint32_t py = cursor_y * FONT_HEIGHT;
-
+    
+    const font_t *font = font_get_current();
+    uint32_t px = cursor_x * font->width;
+    uint32_t py = cursor_y * font->height;
+    
     draw_char(px, py, c);
-
     cursor_x++;
-    if ((cursor_x + 1) * FONT_WIDTH >= screen_width) {
+    
+    if ((cursor_x + 1) * font->width >= screen_width) {
         newline();
     }
 }

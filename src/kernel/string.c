@@ -43,6 +43,19 @@ char* strstr(const char* haystack, const char* needle) {
 }
 
 
+char *strchr(const char *s, int c) {
+    while (*s) {
+        if (*s == (char)c) {
+            return (char *)s; // cast to remove const
+        }
+        s++;
+    }
+    if (c == '\0') {
+        return (char *)s; // return pointer to null terminator
+    }
+    return NULL;
+}
+
 size_t strlen(const char* str) {
     return str_len(str);
 }
