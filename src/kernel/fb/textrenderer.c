@@ -88,11 +88,10 @@ static void newline(void) {
     uint32_t font_height = font->height;
 
     if ((cursor_y + 1) * font_height >= screen_height) {
-        // Scroll framebuffer up by one text row
-        fb_scroll(font_height, bg_color);
-
-        // Keep cursor on last line
-        cursor_y--;
+        // (TODO)Scroll framebuffer up by one text row
+        // Removed scrolling since it caused pagefaults
+        fb_clear(bg_color);
+        cursor_y = 0;
     }
 }
 

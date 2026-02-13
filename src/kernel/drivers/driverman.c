@@ -19,18 +19,13 @@ void drivers_init(void) {
     log_info("Drivers", "Starting Keyboard drivers");
     ps2_keyboard_init();
     ps2_keyboard_bind(&input_keyboard_binding);
-    log_info("Drivers", "Started Keyboard drivers");
-    
-    if (str_to_int(config_get("iso", "1"))) {
-        log_warn("Drivers", "Booted from ISO -> skipping disk drivers");
-    } else {
+    log_info("Drivers", "Started Keyboard drivers");\
     log_info("Drivers", "Starting Disk drivers");
     floppy_init();
     log_debug("Drivers", "Started FDC");
     ata_init();
     log_debug("Drivers", "Started ATA driver");
-    log_info("Drivers", "Started Disk drivers");
-    }
+    log_info("Drivers", "Started Disk drivers");\
 
     log_ok("Drivers", "All drivers started");
 }
