@@ -1,5 +1,6 @@
 #include "framebuffer.h"
 #include <stdint.h>
+#include <memory.h>
 
 static uint8_t *fb_addr = 0;
 static uint32_t fb_width = 0;
@@ -44,6 +45,32 @@ void fb_clear(uint32_t color) {
         for (uint32_t x = 0; x < fb_width; x++) {
             fb32[y * pixels_per_row + x] = color;
         }
+    }
+}
+
+
+void fb_scroll(uint32_t pixels, uint32_t bg_color) {
+    if (!fb_addr || fb_bpp != 32)
+        return;
+
+    uint32_t bytes_per_pixel = fb_bpp / 8;
+    uint32_t row_size = fb_pitch;
+    uint32_t scroll_bytes = pixels * row_size;
+
+    // Move framebuffer memory up
+    memmove(
+        fb_addr,
+        fb_addr + scroll_bytes,
+        (fb_height * row_size) - scroll_bytes
+    );
+
+    // Clear bottom area
+    uint8_t *bottom = fb_addr + (fb_height * row_size) - scroll_bytes;
+    uint32_t *bottom32 = (uint32_t*)bottom;
+    uint32_t pixels_to_clear = (scroll_bytes / 4);
+
+    for (uint32_t i = 0; i < pixels_to_clear; i++) {
+        bottom32[i] = bg_color;
     }
 }
 

@@ -28,3 +28,21 @@ int memcmp(const void* ptr1, const void* ptr2, size_t num)
             return 1;
     return 0;
 }
+
+void* memmove(void* dst, const void* src, size_t num)
+{
+    uint8_t* d = dst;
+    const uint8_t* s = src;
+
+    if (d < s) {
+        while (num--)
+            *d++ = *s++;
+    } else {
+        d += num;
+        s += num;
+        while (num--)
+            *--d = *--s;
+    }
+
+    return dst;
+}

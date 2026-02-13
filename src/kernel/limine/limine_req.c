@@ -73,13 +73,13 @@ void limine_init(void) {
             fb_init(framebuffer);
             fb_clear(0x000000);
             font_init();
+            tr_init(0xFFFFFF, 0x000000);
             if (font_load("default.bdf")) {
                 log_ok("Fonts", "Loaded default font");
             } else {
                 log_crit("Fonts", "Couln't load default fonts");
                 log_info("Fonts", "Using fallback font.");
             }
-            tr_init(0xFFFFFF, 0x000000);
         } else {
             log_crit("Limine", "UNABLE TO GET FRAMEBUFFER");
         }

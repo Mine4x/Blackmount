@@ -83,10 +83,16 @@ static void draw_char(uint32_t px, uint32_t py, char c) {
 static void newline(void) {
     cursor_x = 0;
     cursor_y++;
-    
+
     const font_t *font = font_get_current();
-    if ((cursor_y + 1) * font->height >= screen_height) {
-        cursor_y = 0;
+    uint32_t font_height = font->height;
+
+    if ((cursor_y + 1) * font_height >= screen_height) {
+        // Scroll framebuffer up by one text row
+        fb_scroll(font_height, bg_color);
+
+        // Keep cursor on last line
+        cursor_y--;
     }
 }
 
