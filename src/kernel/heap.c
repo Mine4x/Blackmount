@@ -1,8 +1,14 @@
 #include "heap.h"
-#include "debug.h"
+#include <mem/pmm.h>
+#include <mem/vmm.h>
+#include <debug.h>
+#include <stdint.h>
+#include <string.h>
 
 #define HEAP_MODULE "HEAP"
-#define HEAP_SIZE (1024 * 1024)  // 1MB heap
+#define HEAP_VIRTUAL_BASE 0xFFFFFFFF90000000ULL  // Kernel heap base address
+#define DEFAULT_HEAP_SIZE (16 * 1024 * 1024)     // 16MB default heap
+#define MIN_HEAP_SIZE (4 * 1024 * 1024)          // Minimum 4MB heap
 #define BLOCK_MAGIC 0xDEADBEEF
 
 typedef struct Block {
@@ -16,30 +22,54 @@ static char heap[HEAP_SIZE];
 static Block* free_list = 0;
 static int heap_initialized = 0;
 
-static unsigned int align(unsigned int size) {
-    return (size + 7) & ~7;
+static uint64_t align(uint64_t size) {
+    return (size + 15) & ~15;\
 }
 
-void init_heap() {
+void init_heap(void) {
     if (heap_initialized) {
         log_warn(HEAP_MODULE, "Heap already initialized");
         return;
     }
     
-    log_info(HEAP_MODULE, "Initializing heap (%d bytes)", HEAP_SIZE);
+    log_info(HEAP_MODULE, "Initializing kernel heap...");
     
-    free_list = (Block*)heap;
+    // Set heap parameters
+    heap_start = HEAP_VIRTUAL_BASE;
+    heap_size = DEFAULT_HEAP_SIZE;
+    
+    // Calculate number of pages needed
+    uint64_t pages_needed = (heap_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    
+    log_info(HEAP_MODULE, "Allocating %llu pages (%llu MB) at virtual address 0x%llx",
+             pages_needed, heap_size / (1024 * 1024), heap_start);
+    
+    // Allocate and map pages for the heap
+    void* result = vmm_alloc_pages(vmm_get_kernel_space(), 
+                                   (void*)heap_start, 
+                                   pages_needed,
+                                   PAGE_WRITE | PAGE_PRESENT);
+    
+    if (!result) {
+        log_crit(HEAP_MODULE, "Failed to allocate virtual memory for heap");
+        return;
+    }
+    
+    // Initialize the free list with one large free block
+    free_list = (Block*)heap_start;
     free_list->magic = BLOCK_MAGIC;
     free_list->size = HEAP_SIZE - sizeof(Block);
     free_list->is_free = 1;
     free_list->next = 0;
     
     heap_initialized = 1;
-    log_ok(HEAP_MODULE, "Heap initialized successfully");
+    log_ok(HEAP_MODULE, "Heap initialized: %llu MB available at 0x%llx", 
+           heap_size / (1024 * 1024), heap_start);
 }
 
 void* kmalloc(unsigned int size) {
     if (!heap_initialized) {
+        log_warn(HEAP_MODULE, "Auto-initializing heap on first allocation");
         init_heap();
     }
     
@@ -93,8 +123,10 @@ void kfree(void* ptr) {
         return;
     }
     
-    char* p = (char*)ptr;
-    if (p < heap || p >= heap + HEAP_SIZE) {
+    uint64_t heap_end = heap_start + heap_size;
+    uint64_t ptr_addr = (uint64_t)ptr;
+    
+    if (ptr_addr < heap_start || ptr_addr >= heap_end) {
         log_err(HEAP_MODULE, "Attempted to free pointer outside heap: %p", ptr);
         return;
     }
@@ -160,7 +192,7 @@ void get_heap_stats(HeapStats* stats) {
     }
 }
 
-void defrag_heap() {
+void defrag_heap(void) {
     if (!heap_initialized) {
         log_err(HEAP_MODULE, "defrag_heap called before heap initialization");
         return;

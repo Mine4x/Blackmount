@@ -1,5 +1,5 @@
-#include <drivers/fs/fat/fat.h>
 #include <stdint.h>
+#include <limine/limine_req.h>
 #include "debug.h"
 
 #define MAX_CONFIG_ENTRIES 64
@@ -45,37 +45,35 @@ static void config_add(const char* key, const char* value) {
     e->value[i] = 0;
 }
 
-void loadConfig(fat_fs_t* fs) {
-    fat_file_t configFile;
+void loadConfig(void) {
+    uint64_t size;
+    char* buffer = (char*)limine_get_module("kernel.conf", &size);
 
-    if (!fat_open(fs, "config/config", &configFile)) {
-        log_crit("Config", "Couln't open config file");
+    if (!buffer) {
+        log_crit("Config", "kernel.conf module not found");
         return;
     }
 
-    char buffer[512];
-    uint32_t bytesRead = fat_read(&configFile, buffer, sizeof(buffer) - 1);
-    buffer[bytesRead] = 0;
-
-    char key[MAX_KEY_LEN];
-    char value[MAX_VALUE_LEN];
+    log_info("Config", "Reading kernel.conf, size=%d bytes", size);
 
     uint32_t i = 0;
-    while (i < bytesRead) {
+    while (i < size) {
+        char key[MAX_KEY_LEN] = {0};
+        char value[MAX_VALUE_LEN] = {0};
         uint32_t k = 0;
         uint32_t v = 0;
 
-        while (buffer[i] != '=' && buffer[i] != '\n' && buffer[i] != 0) {
+        while (i < size && buffer[i] != '=' && buffer[i] != '\n') {
             if (k < MAX_KEY_LEN - 1)
                 key[k++] = buffer[i];
             i++;
         }
         key[k] = 0;
 
-        if (buffer[i] == '=')
+        if (i < size && buffer[i] == '=')
             i++;
 
-        while (buffer[i] != '\n' && buffer[i] != 0) {
+        while (i < size && buffer[i] != '\n') {
             if (v < MAX_VALUE_LEN - 1)
                 value[v++] = buffer[i];
             i++;
@@ -83,11 +81,11 @@ void loadConfig(fat_fs_t* fs) {
         value[v] = 0;
 
         if (k > 0) {
-            log_info("Config", "Got config %s with value %s", key, value);
+            log_info("Config", "Got config %s = %s", key, value);
             config_add(key, value);
         }
 
-        if (buffer[i] == '\n')
+        if (i < size && buffer[i] == '\n')
             i++;
     }
 }

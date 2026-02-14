@@ -16,16 +16,20 @@ $(BUILD_DIR)/nbos.iso: kernel
 	@echo "--> Copying target files (including Limine)..."
 	@cp -r target/* $(BUILD_DIR)/iso/
 	@cp $(BUILD_DIR)/kernel.bin $(BUILD_DIR)/iso/boot
-	@echo "--> Creating ISO image..."
+	@echo "--> Creating hybrid BIOS+UEFI ISO image..."
 	@xorriso -as mkisofs \
+		-R -r -J \
 		-b boot/limine-bios-cd.bin \
 		-no-emul-boot \
 		-boot-load-size 4 \
 		-boot-info-table \
 		--protective-msdos-label \
+		--efi-boot boot/limine-uefi-cd.bin \
+		-efi-boot-part --efi-boot-image \
 		$(BUILD_DIR)/iso \
 		-o $@
 	@echo "--> ISO created: $@"
+
 
 #
 # Bootloader

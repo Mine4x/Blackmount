@@ -1,19 +1,16 @@
 #pragma once
-#include <stdio.h>
 #include <stdint.h>
+#include <hal/vfs.h>
 
-int32_t sys_write(uint32_t fd, uint32_t buf, uint32_t count, uint32_t unused1, uint32_t unused2) {
-    if (buf == 0) { 
-        return -1;
-    }
+int32_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
+                  uint64_t unused1, uint64_t unused2)
+{
+    (void)unused1;
+    (void)unused2;
 
-    const char* buffer = (const char*)buf;
-
-    if (fd == 1 || fd == 2) {
-        printf(buffer);
-
-        return count;
-    }
-
-    return -1;
+    return VFS_Write(
+        (fd_t)fd,
+        (uint8_t*)buf,
+        (size_t)count
+    );
 }

@@ -21,6 +21,41 @@ void str_cpy(char* dst, const char* src) {
     dst[i] = 0; // null terminator
 }
 
+char* strstr(const char* haystack, const char* needle) {
+    if (!*needle)  // Empty needle
+        return (char*)haystack;
+
+    for (; *haystack; haystack++) {
+
+        const char* h = haystack;
+        const char* n = needle;
+
+        while (*h && *n && (*h == *n)) {
+            h++;
+            n++;
+        }
+
+        if (!*n)  // Reached end of needle → match
+            return (char*)haystack;
+    }
+
+    return NULL;
+}
+
+
+char *strchr(const char *s, int c) {
+    while (*s) {
+        if (*s == (char)c) {
+            return (char *)s; // cast to remove const
+        }
+        s++;
+    }
+    if (c == '\0') {
+        return (char *)s; // return pointer to null terminator
+    }
+    return NULL;
+}
+
 size_t strlen(const char* str) {
     return str_len(str);
 }

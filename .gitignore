@@ -3,3 +3,4 @@ toolchain/
 *.err
 bx_enh_dbg.ini
 .vscode/*.log
+musl-1.2.5

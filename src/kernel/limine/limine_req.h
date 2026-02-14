@@ -5,6 +5,8 @@
 #include <stdint.h>
 
 void limine_init(void);
+struct limine_framebuffer_response* limine_get_fb();
+void* limine_get_module(const char* name, uint64_t* out_size);
 
 extern volatile struct limine_bootloader_info_request bootloader_info_request;
 extern volatile struct limine_hhdm_request hhdm_request;
