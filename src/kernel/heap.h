@@ -1,14 +1,14 @@
 #ifndef HEAP_H
 #define HEAP_H
 
-#include <stdint.h>
+void init_heap();
 
 typedef struct {
-    uint64_t total_size;
-    uint64_t used_size;
-    uint64_t free_size;
-    uint64_t num_blocks;
-    uint64_t num_free_blocks;
+    unsigned int total_size;
+    unsigned int used_size;
+    unsigned int free_size;
+    unsigned int num_blocks;
+    unsigned int num_free_blocks;
 } HeapStats;
 
 // Initialize the kernel heap
@@ -26,4 +26,6 @@ void get_heap_stats(HeapStats* stats);
 // Defragment the heap by merging adjacent free blocks
 void defrag_heap(void);
 
-#endif // HEAP_H
+void defrag_heap();
+
+#endif
