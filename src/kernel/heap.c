@@ -12,15 +12,16 @@
 #define BLOCK_MAGIC 0xDEADBEEF
 
 typedef struct Block {
-    unsigned int magic; 
-    unsigned int size; 
+    uint32_t magic; 
+    uint64_t size; 
     int is_free; 
     struct Block* next; 
 } Block;
 
-static char heap[HEAP_SIZE];
-static Block* free_list = 0;
+static Block* free_list = NULL;
 static int heap_initialized = 0;
+static uint64_t heap_start = 0;
+static uint64_t heap_size = 0;
 
 static uint64_t align(uint64_t size) {
     return (size + 15) & ~15;\
@@ -58,38 +59,44 @@ void init_heap(void) {
     // Initialize the free list with one large free block
     free_list = (Block*)heap_start;
     free_list->magic = BLOCK_MAGIC;
-    free_list->size = HEAP_SIZE - sizeof(Block);
+    free_list->size = heap_size - sizeof(Block);
     free_list->is_free = 1;
-    free_list->next = 0;
+    free_list->next = NULL;
     
     heap_initialized = 1;
     log_ok(HEAP_MODULE, "Heap initialized: %llu MB available at 0x%llx", 
            heap_size / (1024 * 1024), heap_start);
 }
 
-void* kmalloc(unsigned int size) {
+void* kmalloc(uint64_t size) {
     if (!heap_initialized) {
         log_warn(HEAP_MODULE, "Auto-initializing heap on first allocation");
         init_heap();
     }
     
-    if (size == 0) {
-        log_warn(HEAP_MODULE, "Attempted to allocate 0 bytes");
-        return 0;
+    if (!heap_initialized) {
+        log_crit(HEAP_MODULE, "Heap initialization failed");
+        return NULL;
     }
     
-    unsigned int aligned_size = align(size);
+    if (size == 0) {
+        log_warn(HEAP_MODULE, "Attempted to allocate 0 bytes");
+        return NULL;
+    }
+    
+    uint64_t aligned_size = align(size);
     
     Block* current = free_list;
     
     while (current) {
         if (current->magic != BLOCK_MAGIC) {
             log_crit(HEAP_MODULE, "Heap corruption detected at block %p", current);
-            return 0;
+            return NULL;
         }
         
         if (current->is_free && current->size >= aligned_size) {
-            if (current->size >= aligned_size + sizeof(Block) + 8) {
+            // Split block if there's enough space for another block
+            if (current->size >= aligned_size + sizeof(Block) + 16) {
                 Block* new_block = (Block*)((char*)current + sizeof(Block) + aligned_size);
                 new_block->magic = BLOCK_MAGIC;
                 new_block->size = current->size - aligned_size - sizeof(Block);
@@ -108,8 +115,8 @@ void* kmalloc(unsigned int size) {
         current = current->next;
     }
     
-    log_err(HEAP_MODULE, "Out of memory: failed to allocate %d bytes", size);
-    return 0;
+    log_err(HEAP_MODULE, "Out of memory: failed to allocate %llu bytes", size);
+    return NULL;
 }
 
 void kfree(void* ptr) {
@@ -131,7 +138,7 @@ void kfree(void* ptr) {
         return;
     }
     
-    Block* block = (Block*)(p - sizeof(Block));
+    Block* block = (Block*)((char*)ptr - sizeof(Block));
     
     if (block->magic != BLOCK_MAGIC) {
         log_err(HEAP_MODULE, "Invalid block magic at %p (corruption or invalid pointer)", ptr);
@@ -145,11 +152,13 @@ void kfree(void* ptr) {
     
     block->is_free = 1;
     
+    // Coalesce with next block if it's free
     if (block->next && block->next->is_free) {
         block->size += sizeof(Block) + block->next->size;
         block->next = block->next->next;
     }
     
+    // Coalesce with previous block if it's free
     Block* current = free_list;
     while (current && current->next != block) {
         current = current->next;
@@ -159,7 +168,6 @@ void kfree(void* ptr) {
         current->size += sizeof(Block) + block->size;
         current->next = block->next;
     }
-    
 }
 
 void get_heap_stats(HeapStats* stats) {
@@ -173,7 +181,7 @@ void get_heap_stats(HeapStats* stats) {
         return;
     }
     
-    stats->total_size = HEAP_SIZE;
+    stats->total_size = heap_size;
     stats->used_size = 0;
     stats->free_size = 0;
     stats->num_blocks = 0;
@@ -208,5 +216,9 @@ void defrag_heap(void) {
         } else {
             current = current->next;
         }
+    }
+    
+    if (merged_count > 0) {
+        log_info(HEAP_MODULE, "Defragmentation merged %d blocks", merged_count);
     }
 }
