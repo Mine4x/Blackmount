@@ -15,6 +15,8 @@ static bool tr_escape_mode = false;
 static char tr_escape_buf[16];
 static int tr_escape_pos = 0;
 
+static bool started = false;
+
 static void handle_escape_sequence(void) {
     tr_escape_buf[tr_escape_pos] = 0;
     
@@ -88,10 +90,11 @@ static void newline(void) {
     uint32_t font_height = font->height;
 
     if ((cursor_y + 1) * font_height >= screen_height) {
-        // (TODO)Scroll framebuffer up by one text row
-        // Removed scrolling since it caused pagefaults
-        fb_clear(bg_color);
-        cursor_y = 0;
+        // Scroll framebuffer up by one text row
+        fb_scroll(font_height, bg_color);
+
+        // Keep cursor on last line
+        cursor_y--;
     }
 }
 
@@ -102,6 +105,7 @@ void tr_init(uint32_t fg, uint32_t bg) {
     screen_height = fb_get_height();
     cursor_x = 0;
     cursor_y = 0;
+    started = true;
 }
 
 void tr_set_color(uint32_t fg, uint32_t bg) {
@@ -110,6 +114,10 @@ void tr_set_color(uint32_t fg, uint32_t bg) {
 }
 
 void tr_putc(char c) {
+    if (!started) {
+        return;
+    }
+
     if (tr_escape_mode) {
         if (tr_escape_pos < 15) {
             tr_escape_buf[tr_escape_pos++] = c;
