@@ -30,6 +30,17 @@
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 
+// This function will be copied to user space
+void user_test_program(void)
+{
+    while (1)
+    {
+        __asm__ volatile("int $0x80" : : "a"(1));
+    }
+}
+
+// Mark the end so we know how much to copy
+void user_test_program_end(void) {}
 
 void kmain(void)
 {   
@@ -87,6 +98,7 @@ void kmain(void)
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
     
+    proc_create_user(user_test_program, user_test_program_end, 10, 0);
     proc_start_scheduling();
 
     halt();
