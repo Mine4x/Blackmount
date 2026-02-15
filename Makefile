@@ -33,6 +33,7 @@ $(BUILD_DIR)/nbos.iso: kernel
 #
 # Hard disk image
 #
+# Hard disk pretends to be a root drive to test systems.
 harddisk_image: $(BUILD_DIR)/harddisk.img
 
 $(BUILD_DIR)/harddisk.img: always
@@ -41,6 +42,7 @@ $(BUILD_DIR)/harddisk.img: always
 	@mcopy -i $@ test.txt "::test.txt"
 	@mmd -i $@ "::mydir"
 	@mcopy -i $@ test.txt "::mydir/test.txt"
+	@mmd -i $@ "::dev"
 	@echo "--> Created: " $@
 
 

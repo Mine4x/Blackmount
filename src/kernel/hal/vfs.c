@@ -207,6 +207,20 @@ void VFS_Init(void)
     }
 }
 
+int VFS_Set_Pos(int fd, uint32_t pos)
+{
+    if (fd < 0 || fd > MAX_OPEN_FILES)
+        return -1;
+    
+    if (open_files[fd].exists && open_files[fd].disk_type == DISK) {
+        open_files[fd].file.pos = pos;
+
+        return 0;
+    }
+
+    return -1;
+}
+
 // For compatiblitiy with stdio
 int VFS_Write_old(fd_t file, uint8_t* data, size_t size)
 {

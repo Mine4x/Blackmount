@@ -31,5 +31,6 @@ int VFS_Read(int fd, size_t count, void *buf);
 int VFS_Close(int fd);
 void VFS_Init(void);
 int VFS_Write(int fd, size_t count, void *buf);
+int VFS_Set_Pos(int fd, uint32_t pos);
 
 int VFS_Write_old(fd_t file, uint8_t* data, size_t size);

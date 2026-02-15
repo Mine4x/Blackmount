@@ -161,3 +161,36 @@ void tr_write(const char *str) {
         tr_putc(*str++);
     }
 }
+
+void tr_backspace(void) {
+    if (!started)
+        return;
+
+    const font_t *font = font_get_current();
+    uint32_t font_width = font->width;
+    uint32_t font_height = font->height;
+
+    // If cursor is at the very beginning, nothing to do
+    if (cursor_x == 0 && cursor_y == 0)
+        return;
+
+    // Move cursor back
+    if (cursor_x == 0) {
+        // Move to end of previous line
+        cursor_y--;
+        cursor_x = screen_width / font_width - 1;
+    } else {
+        cursor_x--;
+    }
+
+    // Calculate pixel position
+    uint32_t px = cursor_x * font_width;
+    uint32_t py = cursor_y * font_height;
+
+    // Draw blank rectangle to erase character
+    for (uint32_t y = 0; y < font_height; y++) {
+        for (uint32_t x = 0; x < font_width; x++) {
+            fb_putpixel(px + x, py + y, bg_color);
+        }
+    }
+}
