@@ -1,8 +1,8 @@
 include build_scripts/config.mk
 
-.PHONY: all kernel clean always tools_fat iso_image
+.PHONY: all kernel clean always tools_fat iso_image harddisk_image
 
-all: iso_image tools_fat
+all: iso_image tools_fat harddisk_image
 
 include build_scripts/toolchain.mk
 
@@ -29,6 +29,20 @@ $(BUILD_DIR)/nbos.iso: kernel
 		$(BUILD_DIR)/iso \
 		-o $@
 	@echo "--> ISO created: $@"
+
+#
+# Hard disk image
+#
+harddisk_image: $(BUILD_DIR)/harddisk.img
+
+$(BUILD_DIR)/harddisk.img: always
+	@dd if=/dev/zero of=$@ bs=512 count=131072 >/dev/null
+	@mkfs.fat -F 32 -n "NBOSHDD" $@ >/dev/null
+	@mcopy -i $@ test.txt "::test.txt"
+	@mmd -i $@ "::mydir"
+	@mcopy -i $@ test.txt "::mydir/test.txt"
+	@echo "--> Created: " $@
+
 
 #
 # Kernel

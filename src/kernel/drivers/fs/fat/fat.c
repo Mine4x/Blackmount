@@ -384,6 +384,8 @@ uint32_t fat_read(fat_file_t* file, void* buffer, uint32_t bytes) {
     uint8_t* buf = (uint8_t*)buffer;
     uint32_t total_read = 0;
     
+    file-> pos = 0;
+    
     if (file->pos + bytes > file->size) {
         bytes = file->size - file->pos;
     }

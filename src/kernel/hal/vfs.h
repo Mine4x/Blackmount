@@ -7,12 +7,12 @@ typedef int fd_t;
 
 typedef enum {
     RAMDISK = 0,
-    ATA = 1,
+    DISK = 1,
 } disk_type_t;
 
 typedef struct {
     const char* path;
-    fat_file_t* file; // For disks ONLY
+    fat_file_t file; // For disks ONLY
     disk_type_t disk_type;
     bool exists;
 } VFS_File_t;

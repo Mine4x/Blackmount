@@ -19,6 +19,7 @@
 #include <arch/x86_64/io.h>
 #include <halt.h>
 #include <hal/vfs.h>
+#include <drivers/disk/ata.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -58,13 +59,16 @@ void kmain(void)
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
 
+    ata_init();
+    log_ok("Boot", "Initialized ATA Driver");
+
     VFS_Init();
     log_ok("Boot", "Initialized VFS");
 
-    int x = VFS_Create("/test.txt", false);
+    int x = VFS_Create("/test2.txt", false);
     printf("create: %d\n", x);
 
-    int fd = VFS_Open("/test.txt");
+    int fd = VFS_Open("/test2.txt");
     printf("open: %d\n", fd);
 
     const char *message = "Testing VFS!";
