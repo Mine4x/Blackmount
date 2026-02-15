@@ -2,6 +2,7 @@
 #include "pmm.h"
 #include <debug.h>
 #include <string.h>
+#include <memory.h>
 
 extern uint64_t hhdm_offset;
 
@@ -27,8 +28,11 @@ static address_space_t kernel_space = {0};
 static page_table_t* vmm_get_next_level(page_table_t* current, size_t index, bool create, uint64_t flags) {
     uint64_t entry = current->entries[index];
     
-    // If entry exists, return it
+    // If entry exists, update flags and return it
     if (entry & PAGE_PRESENT) {
+        // Update the entry to include new flags (important for USER bit propagation)
+        current->entries[index] |= (flags & (PAGE_USER | PAGE_WRITE));
+        
         void* phys = (void*)PTE_GET_ADDR(entry);
         return (page_table_t*)PHYS_TO_VIRT(phys);
     }
@@ -49,8 +53,8 @@ static page_table_t* vmm_get_next_level(page_table_t* current, size_t index, boo
     page_table_t* table = (page_table_t*)PHYS_TO_VIRT(phys);
     memset(table, 0, PAGE_SIZE);
     
-    // Set the entry
-    current->entries[index] = PTE_CREATE(phys, flags | PAGE_PRESENT | PAGE_WRITE);
+    // Set the entry with all required flags
+    current->entries[index] = PTE_CREATE(phys, flags | PAGE_PRESENT);
     
     return table;
 }

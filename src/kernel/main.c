@@ -30,6 +30,38 @@
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 
+// This function will be copied to user space
+void user_test_program(void)
+{
+    while (1)
+    {
+        __asm__ volatile("int $0x80" : : "a"(1));
+    }
+}
+
+// Mark the end so we know how much to copy
+void user_test_program_end(void) {}
+
+void create_user_task_example(void)
+{
+    // Calculate size of the user program
+    size_t code_size = (uint64_t)user_test_program_end - (uint64_t)user_test_program;
+    
+    // Round up to nearest page
+    if (code_size > 4096) code_size = 4096; // Safety limit
+    
+    // Copy code to user space at 0x400000
+    memcpy((void*)0x400000, (void*)user_test_program, code_size);
+    
+    // Now create the user task pointing to that address
+    int pid = proc_create_user(0x400000, 10, 0);
+    
+    if (pid < 0) {
+        log_err("PROC", "Failed to create user task!");
+    } else {
+        log_ok("PROC", "Created user task with PID %d", pid);
+    }
+}
 
 void kmain(void)
 {   
@@ -87,6 +119,7 @@ void kmain(void)
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
     
+    create_user_task_example();
     proc_start_scheduling();
 
     halt();
