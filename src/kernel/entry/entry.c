@@ -18,6 +18,7 @@
 #include <syscalls/scman.h>
 #include <arch/x86_64/io.h>
 #include <halt.h>
+#include <hal/vfs.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -56,6 +57,32 @@ void kmain(void)
 
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
+
+    VFS_Init();
+    log_ok("Boot", "Initialized VFS");
+
+    int x = VFS_Create("/test.txt", false);
+    printf("create: %d\n", x);
+
+    int fd = VFS_Open("/test.txt");
+    printf("open: %d\n", fd);
+
+    const char *message = "Testing VFS!";
+    size_t len = 13;
+
+    x = VFS_Write(fd, len, (void*)message);
+    printf("write: %d\n", x);
+
+    char output[14];
+
+    x = VFS_Read(fd, len, output);
+
+    if (x > 0 && x < sizeof(output))
+        output[x] = '\0';
+    else
+        output[0] = '\0';
+
+    printf("read: %d %s\n", x, output);
 
     timer_init();
     log_ok("Boot", "Initialized timer");
