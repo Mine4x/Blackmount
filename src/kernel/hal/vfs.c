@@ -194,7 +194,7 @@ void VFS_Init(void)
         log_info("VFS", "Using ATA");
         block_device_t* bd = ata_create_primary_blockdev("root");
         if (bd == NULL) {
-            panic("VFS", "Couldn't mount root drive");
+            panic("VFS", "Couldn't mount root drive\nHELP: Try to mount the drive from another OS and make sure that:\nThe drive is correctly configured in /etc/kernel.conf");
         }
         fat_fs_t* ffs = fat_mount(bd);
         if (ffs == NULL) {
