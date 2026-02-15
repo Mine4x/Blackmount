@@ -71,6 +71,28 @@ void vmm_init(void) {
     log_ok("VMM", "Virtual memory manager initialized");
     log_info("VMM", "Kernel space PML4: 0x%llx (phys: 0x%llx)", 
              (uint64_t)kernel_space.pml4_virt, (uint64_t)kernel_space.pml4);
+    setup_user_space();
+}
+
+void setup_user_space(void) {
+    log_info("VMM", "Mapping user space at 0x400000...");
+    
+    address_space_t* kernel_space = vmm_get_kernel_space();
+    
+    for (uint64_t vaddr = 0x400000; vaddr < 0x800000; vaddr += PAGE_SIZE) {
+        void* phys = pmm_alloc();
+        
+        if (!phys) {
+            log_err("VMM", "Failed to allocate frame!");
+            break;
+        }
+        
+        uint64_t flags = PAGE_PRESENT | PAGE_WRITE | PAGE_USER;
+        
+        vmm_map(kernel_space, (void*)vaddr, phys, flags);
+    }
+    
+    log_ok("VMM", "User space mapped (4MB at 0x400000)");
 }
 
 address_space_t* vmm_get_kernel_space(void) {

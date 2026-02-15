@@ -39,6 +39,9 @@ typedef struct {
 // Initialize the VMM (sets up kernel page tables)
 void vmm_init(void);
 
+// Maps the userspace
+void setup_user_space(void);
+
 // Get the kernel address space
 address_space_t* vmm_get_kernel_space(void);
 
