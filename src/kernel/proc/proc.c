@@ -4,6 +4,7 @@
 #include <arch/x86_64/gdt.h>
 #include <memory.h>
 #include <mem/vmm.h>
+#include <debug.h>
 
 typedef enum {
     PROC_UNUSED = 0,
@@ -162,14 +163,78 @@ int proc_create_kernel(void (*entry)(void), uint32_t priority, uint32_t parent)
     return proc_create_internal((uint64_t)entry, priority, parent, PROC_TYPE_KERNEL);
 }
 
-int proc_create_user(uint64_t entry_addr, uint32_t priority, uint32_t parent)
+
+int proc_create_user(void (*entry)(void), void (*end_marker)(void), uint32_t priority, uint32_t parent)
 {
-    // Entry address must be in user space
-    if (entry_addr < USER_CODE_BASE || entry_addr >= USER_STACK_BASE) {
+    __asm__ volatile("cli");
+    
+    // Validate function pointers first
+    if (!entry || !end_marker) {
+        __asm__ volatile("sti");
+        log_err("PROC", "Invalid function pointers!");
         return -1;
     }
     
-    return proc_create_internal(entry_addr, priority, parent, PROC_TYPE_USER);
+    // Calculate size of the user program
+    size_t code_size = (uint64_t)end_marker - (uint64_t)entry;
+    
+    // Validate size
+    if (code_size == 0 || code_size > 0x10000) {  // Max 64KB per program
+        __asm__ volatile("sti");
+        log_err("PROC", "Invalid user program size: %d bytes", code_size);
+        return -1;
+    }
+    
+    // Round up to page boundary
+    size_t pages_needed = (code_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    size_t alloc_size = pages_needed * PAGE_SIZE;
+    
+    // Find next available user space address
+    uint64_t user_addr = next_user_code_addr;
+    
+    // Ensure we have space (don't overlap with user stack region)
+    if (user_addr + alloc_size >= USER_STACK_BASE) {
+        __asm__ volatile("sti");
+        log_err("PROC", "Out of user space!");
+        return -1;
+    }
+    
+    // Store values in local variables before logging (stack safety)
+    uint64_t safe_addr = user_addr;
+    size_t safe_size = code_size;
+    
+    __asm__ volatile("sti");
+    
+    log_info("PROC", "Copying %d bytes of user code to 0x%lx", safe_size, safe_addr);
+    
+    __asm__ volatile("cli");
+    
+    // Copy code to user space
+    memcpy((void*)user_addr, (void*)entry, code_size);
+    
+    // Zero out the rest of the allocated pages for security
+    if (alloc_size > code_size) {
+        memset((void*)(user_addr + code_size), 0, alloc_size - code_size);
+    }
+    
+    // Create the user task
+    int pid = proc_create_internal(user_addr, priority, parent, PROC_TYPE_USER);
+    
+    if (pid < 0) {
+        __asm__ volatile("sti");
+        log_err("PROC", "Failed to create user task!");
+        return -1;
+    }
+    
+    // Update next available address
+    next_user_code_addr = user_addr + alloc_size;
+    
+    // Re-enable interrupts
+    __asm__ volatile("sti");
+    
+    log_ok("PROC", "Created user task with PID %d at 0x%lx", pid, safe_addr);
+    
+    return pid;
 }
 
 int proc_load_user_code(int pid, const void* code, size_t size, uint64_t dest_addr)
