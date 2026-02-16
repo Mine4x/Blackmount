@@ -87,7 +87,7 @@ int VFS_Open(const char* path)
         int is_file = ramdisk_fs_is_file(path);
 
         if (!exists || !is_file)
-            return -1;
+            return -10;
         
         
         for (int i = 0; i < MAX_OPEN_FILES; i++) {
@@ -200,6 +200,29 @@ int VFS_Close(int fd)
     return -1;
 }
 
+static void create_special_files()
+{
+    if (VFS_Create("/dev", true) < 0)
+        panic("VFS", "Failed to create special files 1");
+    if (VFS_Create("/dev/stdin", false) < 0)
+        panic("VFS", "Failed to create special files 2");
+    if (VFS_Create("/dev/stdout", false) < 0)
+        panic("VFS", "Failed to create special files 3");
+    if (VFS_Create("/dev/stderr", false) < 0)
+        panic("VFS", "Failed to create special files 4");
+    if (VFS_Create("/dev/stddbg", false) < 0)
+        panic("VFS", "Failed to create special files 5");
+    
+    if (VFS_Open("/dev/stdin") < 0)
+        panic("VFS", "Failed to open special files 1");
+    if (VFS_Open("/dev/stdout") < 0)
+        panic("VFS", "Failed to open special files 2");
+    if (VFS_Open("/dev/stderr") < 0)
+        panic("VFS", "Failed to open special files 3");
+    if (VFS_Open("/dev/stddbg") < 0)
+        panic("VFS", "Failed to open special files 4");
+}
+
 void VFS_Init(void)
 {
     open_files = kmalloc(MAX_OPEN_FILES * sizeof(VFS_File_t));
@@ -214,6 +237,8 @@ void VFS_Init(void)
         log_info("VFS", "Using ramdisk");
         ramdisk_init_fs();
         rootDriveType = RAMDISK;
+
+        create_special_files();
 
         return;
     }
@@ -238,6 +263,8 @@ void VFS_Init(void)
         rootfs = efs;
         rootDriveType = DISK;
         mounted = true;
+
+        create_special_files();
     }
 }
 

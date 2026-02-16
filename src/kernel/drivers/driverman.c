@@ -15,8 +15,6 @@
 
 #define DRIVERS_MODULE "Drivers"
 
-int stdin_fd;
-
 static void input_keyboard_binding(char c)
 {
     if (c == 'x')
@@ -54,12 +52,6 @@ void drivers_init(void)
 {
     log_info(DRIVERS_MODULE, "Creating important driver file");
 
-    VFS_Create("/dev/stdin", false);
-
-    stdin_fd = VFS_Open("/dev/stdin");
-    if (stdin_fd == -1)
-        panic(DRIVERS_MODULE, "Couldn't create /dev/stdin");
-
     log_info(DRIVERS_MODULE, "Starting Keyboard drivers");
 
     ps2_keyboard_init();
@@ -69,7 +61,7 @@ void drivers_init(void)
 
     log_info(DRIVERS_MODULE, "Starting Input manager");
 
-    if (!Input_Init(stdin_fd))
+    if (!Input_Init(VFS_FD_STDIN))
         panic(DRIVERS_MODULE, "Failed to initialize Input Manager");
 
     log_debug(DRIVERS_MODULE, "Initialized Input Buffer");
