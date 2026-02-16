@@ -13,12 +13,16 @@
 #include <stddef.h>
 #include <debug.h>
 #include <panic/panic.h>
+#include <proc/proc.h>
 
 block_device_t* rootdrive;
 ext2_fs_t* rootfs;
 disk_type_t rootDriveType;
 
 bool mounted = false;
+
+const char* special_paths[] = {"/dev/stdin", "/dev/stdout", "/dev/stderr", "/dev/stddbg"};
+const int sp_len = sizeof(special_paths) / sizeof(special_paths[0]);
 
 VFS_File_t *open_files;
 
@@ -54,12 +58,21 @@ int get_value_by_key(const char *input, int key, char *out, size_t out_size)
     return 0;
 }
 
+static int check_path(const char* path)
+{
+    for (int i = 0; i < sp_len; i++) {
+        if (strcmp(path, special_paths[i]) == 0)
+            return i;
+    }
+
+    return -1;
+}
+
 int VFS_Create(const char* path, bool isDir)
 {
     if (rootDriveType == RAMDISK) {
         if (!isDir)
             return ramdisk_create_file(path);
-        
         return ramdisk_create_dir(path);
     }
 
@@ -68,6 +81,7 @@ int VFS_Create(const char* path, bool isDir)
             int result = ext2_mkdir(rootfs, path);
             if (result == EXT2_SUCCESS)
                 return 0;
+            log_info("VFS", "EXT2 NO SUC: %d", result);
             return -1;
         }
         
@@ -80,15 +94,26 @@ int VFS_Create(const char* path, bool isDir)
     return -1;
 }
 
-int VFS_Open(const char* path)
+static int setflags(file_flags_t flags, int fd)
 {
+    if (!open_files[fd].exists)
+        return -1;
+    
+    open_files[fd].flags = flags;
+}
+
+int VFS_Open(const char* path, bool privileged)
+{
+    int response = check_path(path);
+    if (response != -1 && !privileged)
+        return response;
+
     if (rootDriveType == RAMDISK) {
         int exists = ramdisk_fs_exists(path);
         int is_file = ramdisk_fs_is_file(path);
 
         if (!exists || !is_file)
             return -10;
-        
         
         for (int i = 0; i < MAX_OPEN_FILES; i++) {
             if (!open_files[i].exists)
@@ -97,6 +122,13 @@ int VFS_Open(const char* path)
                 open_files[i].exists = true;
                 open_files[i].disk_type = RAMDISK;
                 open_files[i].file = NULL;
+                open_files[i].pid = proc_get_current_pid();
+
+                if (privileged)
+                {
+                    open_files[i].pid = -1;
+                    open_files[i].flags = KERNEL;
+                }
 
                 return i;
             }
@@ -115,6 +147,13 @@ int VFS_Open(const char* path)
                 open_files[i].file = ext2_file;
                 open_files[i].exists = true;
                 open_files[i].disk_type = DISK;
+                open_files[i].pid = proc_get_current_pid();
+
+                if (privileged)
+                {
+                    open_files[i].pid = -1;
+                    open_files[i].flags = KERNEL;
+                }
 
                 return i;
             }
@@ -126,12 +165,20 @@ int VFS_Open(const char* path)
     return -1;
 }
 
-int VFS_Write(int fd, size_t count, void *buf)
-{
+int VFS_Write(int fd, size_t count, void *buf, bool privileged)
+{    
     if (fd < 0 || fd >= MAX_OPEN_FILES)
         return -1;
     
     if (!open_files[fd].exists)
+        return -1;
+    
+    if (!privileged
+        && (open_files[fd].flags & KERNEL)
+        && !(open_files[fd].flags & USER_WRITE)) {
+            return -1;
+        }
+    if (!privileged && open_files[fd].pid != proc_get_current_pid())
         return -1;
     
     if (open_files[fd].disk_type == RAMDISK)
@@ -182,12 +229,17 @@ int VFS_Read(int fd, size_t count, void *buf)
     return -1;
 }
 
-int VFS_Close(int fd)
+int VFS_Close(int fd, bool privileged)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
         return -1;
     
     if (open_files[fd].exists) {
+        if (!privileged && (open_files[fd].flags & KERNEL))
+            return -1;
+        if (!privileged && open_files[fd].pid != proc_get_current_pid())
+            return -1;
+
         if (open_files[fd].disk_type == DISK && open_files[fd].file) {
             ext2_close(open_files[fd].file);
             open_files[fd].file = NULL;
@@ -202,8 +254,10 @@ int VFS_Close(int fd)
 
 static void create_special_files()
 {
-    if (VFS_Create("/dev", true) < 0)
-        panic("VFS", "Failed to create special files 1");
+    if (rootDriveType == RAMDISK) {
+        if (VFS_Create("/dev", true) < 0)
+            panic("VFS", "Failed to create special files 1");
+    }
     if (VFS_Create("/dev/stdin", false) < 0)
         panic("VFS", "Failed to create special files 2");
     if (VFS_Create("/dev/stdout", false) < 0)
@@ -213,14 +267,17 @@ static void create_special_files()
     if (VFS_Create("/dev/stddbg", false) < 0)
         panic("VFS", "Failed to create special files 5");
     
-    if (VFS_Open("/dev/stdin") < 0)
+    if (VFS_Open("/dev/stdin", true) < 0)
         panic("VFS", "Failed to open special files 1");
-    if (VFS_Open("/dev/stdout") < 0)
+    if (VFS_Open("/dev/stdout", true) < 0)
         panic("VFS", "Failed to open special files 2");
-    if (VFS_Open("/dev/stderr") < 0)
+    if (VFS_Open("/dev/stderr", true) < 0)
         panic("VFS", "Failed to open special files 3");
-    if (VFS_Open("/dev/stddbg") < 0)
+    if (VFS_Open("/dev/stddbg", true) < 0)
         panic("VFS", "Failed to open special files 4");
+    
+    if (setflags(KERNEL | USER_WRITE , 1) < 0)
+        panic("VFS", "Failed to set flags for special files 1");
 }
 
 void VFS_Init(void)
@@ -276,13 +333,18 @@ void VFS_Unmount(void)
     }
 }
 
-int VFS_Set_Pos(int fd, uint32_t pos)
+int VFS_Set_Pos(int fd, uint32_t pos, bool privileged)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
         return -1;
     
     if (open_files[fd].exists && open_files[fd].disk_type == DISK) {
         if (!open_files[fd].file)
+            return -1;
+        
+        if (!privileged && (open_files[fd].flags & KERNEL) && !(open_files[fd].flags & USER_WRITE))
+            return -1;
+        if (!privileged && open_files[fd].pid != proc_get_current_pid())
             return -1;
         
         int result = ext2_seek(open_files[fd].file, pos, EXT2_SEEK_SET);

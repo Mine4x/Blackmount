@@ -11,10 +11,17 @@ typedef enum {
     DISK = 1,
 } disk_type_t;
 
+typedef enum {
+    USER_WRITE = 0,
+    KERNEL = 1,
+} file_flags_t;
+
 typedef struct {
     const char* path;
     ext2_file_t* file; // For disks ONLY (EXT2 file handle)
     disk_type_t disk_type;
+    file_flags_t flags;
+    int pid;
     bool exists;
 } VFS_File_t;
 
@@ -27,12 +34,12 @@ typedef struct {
 #define MAX_OPEN_FILES 50
 
 int VFS_Create(const char* path, bool isDir);
-int VFS_Open(const char* path);
+int VFS_Open(const char* path, bool privileged);
 int VFS_Read(int fd, size_t count, void *buf);
-int VFS_Close(int fd);
+int VFS_Close(int fd, bool privileged);
 void VFS_Init(void);
-int VFS_Write(int fd, size_t count, void *buf);
-int VFS_Set_Pos(int fd, uint32_t pos);
+int VFS_Write(int fd, size_t count, void *buf, bool privileged);
+int VFS_Set_Pos(int fd, uint32_t pos, bool privileged);
 void VFS_Unmount(void);
 
 int VFS_Write_old(fd_t file, uint8_t* data, size_t size);

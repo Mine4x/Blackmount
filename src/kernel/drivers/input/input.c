@@ -36,7 +36,7 @@ bool Input_Init(int file_descriptor)
     input->fd = file_descriptor;
 
     // Reset file position to start
-    VFS_Set_Pos(input->fd, 0);
+    VFS_Set_Pos(input->fd, 0, true);
 
     return true;
 }
@@ -64,7 +64,7 @@ bool Input_AddChar(char c)
 
     // Write only the new character
     if (input->fd >= 0) {
-        int written = VFS_Write(input->fd, 1, &c);
+        int written = VFS_Write(input->fd, 1, &c, true);
         if (written != 1)
             return false;
     }
@@ -83,7 +83,7 @@ bool Input_RmChar(void)
     // Move file position back by 1
     if (input->fd >= 0) {
         size_t new_pos = input->length;
-        VFS_Set_Pos(input->fd, new_pos);
+        VFS_Set_Pos(input->fd, new_pos, true);
     }
 
     return true;
@@ -99,15 +99,15 @@ void Input_Clear(void)
 
     if (input->fd >= 0) {
         // Reset file to beginning
-        VFS_Set_Pos(input->fd, 0);
+        VFS_Set_Pos(input->fd, 0, true);
 
         // Overwrite entire previous buffer with zeros
         char zero = 0;
         for (size_t i = 0; i < input->capacity; i++)
-            VFS_Write(input->fd, 1, &zero);
+            VFS_Write(input->fd, 1, &zero, true);
 
         // Reset back to beginning again
-        VFS_Set_Pos(input->fd, 0);
+        VFS_Set_Pos(input->fd, 0, true);
     }
 }
 
