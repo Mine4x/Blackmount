@@ -37,13 +37,16 @@ $(BUILD_DIR)/nbos.iso: kernel
 harddisk_image: $(BUILD_DIR)/harddisk.img
 
 $(BUILD_DIR)/harddisk.img: always
-	@dd if=/dev/zero of=$@ bs=512 count=131072 >/dev/null
-	@mkfs.fat -F 32 -n "NBOSHDD" $@ >/dev/null
-	@mcopy -i $@ test.txt "::test.txt"
-	@mmd -i $@ "::mydir"
-	@mcopy -i $@ test.txt "::mydir/test.txt"
-	@mmd -i $@ "::dev"
-	@echo "--> Created: " $@
+	@dd if=/dev/zero of=$@ bs=512 count=131072 status=none
+	@mkfs.ext2 -L NBOSHDD $@ >/dev/null
+	@mkdir -p /tmp/nbosmnt
+	@sudo mount -o loop $@ /tmp/nbosmnt
+	@sudo mkdir -p /tmp/nbosmnt/mydir
+	@sudo mkdir -p /tmp/nbosmnt/dev
+	@sudo cp test.txt /tmp/nbosmnt/test.txt
+	@sudo cp test.txt /tmp/nbosmnt/mydir/test.txt
+	@sudo umount /tmp/nbosmnt
+	@echo "--> Created: $@"
 
 
 #

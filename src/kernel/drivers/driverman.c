@@ -11,6 +11,7 @@
 #include <fb/textrenderer.h>
 #include <hal/vfs.h>
 #include <panic/panic.h>
+#include <arch/x86_64/io.h>
 
 #define DRIVERS_MODULE "Drivers"
 
@@ -18,6 +19,12 @@ int stdin_fd;
 
 static void input_keyboard_binding(char c)
 {
+    if (c == 'x')
+    {
+        VFS_Unmount();
+        x86_64_outw(0x604, 0x2000); // Does shutdown if running qemu
+    }
+
     if (c == '\b' || c == 127)
     {
         if (Input_get_length() == 0)
