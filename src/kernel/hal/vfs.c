@@ -256,28 +256,28 @@ static void create_special_files()
 {
     if (rootDriveType == RAMDISK) {
         if (VFS_Create("/dev", true) < 0)
-            panic("VFS", "Failed to create special files 1");
+            log_err("VFS", "Failed to create special file 1\n This could just be becuase it already exists");
     }
     if (VFS_Create("/dev/stdin", false) < 0)
-        panic("VFS", "Failed to create special files 2");
+        log_err("VFS", "Failed to create special file 2\n This could just be becuase it already exists");
     if (VFS_Create("/dev/stdout", false) < 0)
-        panic("VFS", "Failed to create special files 3");
+        log_err("VFS", "Failed to create special file 3\n This could just be becuase it already exists");
     if (VFS_Create("/dev/stderr", false) < 0)
-        panic("VFS", "Failed to create special files 4");
+        log_err("VFS", "Failed to create special file 4\n This could just be becuase it already exists");
     if (VFS_Create("/dev/stddbg", false) < 0)
-        panic("VFS", "Failed to create special files 5");
+        log_err("VFS", "Failed to create special file 5\n This could just be becuase it already exists");
     
     if (VFS_Open("/dev/stdin", true) < 0)
-        panic("VFS", "Failed to open special files 1");
+        log_err("VFS", "Failed to create special file 1\n This could just be becuase it already exists");
     if (VFS_Open("/dev/stdout", true) < 0)
-        panic("VFS", "Failed to open special files 2");
+        log_err("VFS", "Failed to create special file 2\n This could just be becuase it already exists");
     if (VFS_Open("/dev/stderr", true) < 0)
-        panic("VFS", "Failed to open special files 3");
+        log_err("VFS", "Failed to create special file 3\n This could just be becuase it already exists");
     if (VFS_Open("/dev/stddbg", true) < 0)
-        panic("VFS", "Failed to open special files 4");
+        log_err("VFS", "Failed to create special file 4\n This could just be becuase it already exists");
     
     if (setflags(KERNEL | USER_WRITE , 1) < 0)
-        panic("VFS", "Failed to set flags for special files 1");
+        log_err("VFS", "Failed to set flags special file 1\n This could just be becuase it already exists");
 }
 
 void VFS_Init(void)
