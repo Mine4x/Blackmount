@@ -4,6 +4,7 @@
 #include <fb/framebuffer.h>
 #include <fb/textrenderer.h>
 #include <util/rgb.h>
+#include <hal/vfs.h>
 
 void panic(const char* module, const char* message)
 {
@@ -11,8 +12,12 @@ void panic(const char* module, const char* message)
 
     fb_clear(rgb(0, 120, 215));
     tr_set_color(rgb(255, 255, 255), rgb(0, 120, 215));
-    log_crit("PANIC", "Panic triggerd by %s:\n%s\n", module, message);
 
     printf("Kernel panic triggerd by %s:\n%s\n", module, message);
+
+    VFS_Unmount();
+
+    printf("\n\nYou should now be able to reboot without problems.");
+
     x86_64_Panic();
 }
