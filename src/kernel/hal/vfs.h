@@ -9,6 +9,7 @@ typedef int fd_t;
 typedef enum {
     RAMDISK = 0,
     DISK = 1,
+    IMAGE = 2,
 } disk_type_t;
 
 typedef enum {

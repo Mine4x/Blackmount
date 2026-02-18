@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <drivers/fs/ext/ext2.h>
 #include <drivers/disk/ata.h>
+#include <block/block_image.h>
 #include <drivers/fs/ramdisk.h>
 #include <config/config.h>
 #include <heap.h>
@@ -16,8 +17,9 @@
 #include <proc/proc.h>
 
 block_device_t* rootdrive;
-ext2_fs_t* rootfs;
-disk_type_t rootDriveType;
+ext2_fs_t*      rootfs;
+ext2_fs_t*      imagefs;
+disk_type_t     rootDriveType;
 
 bool mounted = false;
 
@@ -81,7 +83,6 @@ int VFS_Create(const char* path, bool isDir)
             int result = ext2_mkdir(rootfs, path);
             if (result == EXT2_SUCCESS)
                 return 0;
-            log_info("VFS", "EXT2 NO SUC: %d", result);
             return -1;
         }
         
@@ -100,6 +101,7 @@ static int setflags(file_flags_t flags, int fd)
         return -1;
     
     open_files[fd].flags = flags;
+    return 0;
 }
 
 int VFS_Open(const char* path, bool privileged)
@@ -109,30 +111,51 @@ int VFS_Open(const char* path, bool privileged)
         return response;
 
     if (rootDriveType == RAMDISK) {
-        int exists = ramdisk_fs_exists(path);
-        int is_file = ramdisk_fs_is_file(path);
+        if (ramdisk_fs_exists(path) && ramdisk_fs_is_file(path)) {
+            for (int i = 0; i < MAX_OPEN_FILES; i++) {
+                if (!open_files[i].exists) {
+                    open_files[i].path      = path;
+                    open_files[i].exists    = true;
+                    open_files[i].disk_type = RAMDISK;
+                    open_files[i].file      = NULL;
+                    open_files[i].pid       = proc_get_current_pid();
 
-        if (!exists || !is_file)
-            return -10;
-        
-        for (int i = 0; i < MAX_OPEN_FILES; i++) {
-            if (!open_files[i].exists)
-            {
-                open_files[i].path = path;
-                open_files[i].exists = true;
-                open_files[i].disk_type = RAMDISK;
-                open_files[i].file = NULL;
-                open_files[i].pid = proc_get_current_pid();
+                    if (privileged) {
+                        open_files[i].pid   = -1;
+                        open_files[i].flags = KERNEL;
+                    }
 
-                if (privileged)
-                {
-                    open_files[i].pid = -1;
-                    open_files[i].flags = KERNEL;
+                    return i;
                 }
+            }
+            return -1;
+        }
 
-                return i;
+        if (imagefs) {
+            ext2_file_t* img_file = ext2_open(imagefs, path);
+            if (img_file) {
+                for (int i = 0; i < MAX_OPEN_FILES; i++) {
+                    if (!open_files[i].exists) {
+                        open_files[i].path      = path;
+                        open_files[i].file      = img_file;
+                        open_files[i].exists    = true;
+                        open_files[i].disk_type = IMAGE;
+                        open_files[i].pid       = proc_get_current_pid();
+
+                        if (privileged) {
+                            open_files[i].pid   = -1;
+                            open_files[i].flags = KERNEL;
+                        }
+
+                        return i;
+                    }
+                }
+                ext2_close(img_file);
+                return -1;
             }
         }
+
+        return -10;
     }
 
     if (rootDriveType == DISK) {
@@ -141,17 +164,15 @@ int VFS_Open(const char* path, bool privileged)
             return -1;
         
         for (int i = 0; i < MAX_OPEN_FILES; i++) {
-            if (!open_files[i].exists)
-            {
-                open_files[i].path = path;
-                open_files[i].file = ext2_file;
-                open_files[i].exists = true;
+            if (!open_files[i].exists) {
+                open_files[i].path      = path;
+                open_files[i].file      = ext2_file;
+                open_files[i].exists    = true;
                 open_files[i].disk_type = DISK;
-                open_files[i].pid = proc_get_current_pid();
+                open_files[i].pid       = proc_get_current_pid();
 
-                if (privileged)
-                {
-                    open_files[i].pid = -1;
+                if (privileged) {
+                    open_files[i].pid   = -1;
                     open_files[i].flags = KERNEL;
                 }
 
@@ -180,14 +201,14 @@ int VFS_Write(int fd, size_t count, void *buf, bool privileged)
         }
     if (!privileged && open_files[fd].pid != proc_get_current_pid())
         return -1;
+
+    if (open_files[fd].disk_type == IMAGE)
+        return -1;
     
     if (open_files[fd].disk_type == RAMDISK)
-    {
         return ramdisk_write_file(open_files[fd].path, buf, count);
-    }
     
-    if (open_files[fd].disk_type == DISK)
-    {
+    if (open_files[fd].disk_type == DISK) {
         if (!open_files[fd].file)
             return -1;
         
@@ -210,12 +231,10 @@ int VFS_Read(int fd, size_t count, void *buf)
         return -1;
     
     if (open_files[fd].disk_type == RAMDISK)
-    {
         return ramdisk_read_file(open_files[fd].path, buf, count);
-    }
-    
-    if (open_files[fd].disk_type == DISK)
-    {
+
+    if (open_files[fd].disk_type == IMAGE ||
+        open_files[fd].disk_type == DISK) {
         if (!open_files[fd].file)
             return -1;
         
@@ -240,7 +259,9 @@ int VFS_Close(int fd, bool privileged)
         if (!privileged && open_files[fd].pid != proc_get_current_pid())
             return -1;
 
-        if (open_files[fd].disk_type == DISK && open_files[fd].file) {
+        if ((open_files[fd].disk_type == DISK ||
+             open_files[fd].disk_type == IMAGE) &&
+             open_files[fd].file) {
             ext2_close(open_files[fd].file);
             open_files[fd].file = NULL;
         }
@@ -254,10 +275,8 @@ int VFS_Close(int fd, bool privileged)
 
 static void create_special_files()
 {
-    if (rootDriveType == RAMDISK) {
-        if (VFS_Create("/dev", true) < 0)
-            log_err("VFS", "Failed to create special file 1\n This could just be becuase it already exists");
-    }
+    VFS_Create("/dev", true);
+
     if (VFS_Create("/dev/stdin", false) < 0)
         log_err("VFS", "Failed to create special file 2\n This could just be becuase it already exists");
     if (VFS_Create("/dev/stdout", false) < 0)
@@ -268,15 +287,15 @@ static void create_special_files()
         log_err("VFS", "Failed to create special file 5\n This could just be becuase it already exists");
     
     if (VFS_Open("/dev/stdin", true) < 0)
-        log_err("VFS", "Failed to create special file 1\n This could just be becuase it already exists");
+        log_err("VFS", "Failed to open special file 1");
     if (VFS_Open("/dev/stdout", true) < 0)
-        log_err("VFS", "Failed to create special file 2\n This could just be becuase it already exists");
+        log_err("VFS", "Failed to open special file 2");
     if (VFS_Open("/dev/stderr", true) < 0)
-        log_err("VFS", "Failed to create special file 3\n This could just be becuase it already exists");
+        log_err("VFS", "Failed to open special file 3");
     if (VFS_Open("/dev/stddbg", true) < 0)
-        log_err("VFS", "Failed to create special file 4\n This could just be becuase it already exists");
+        log_err("VFS", "Failed to open special file 4");
     
-    if (setflags(KERNEL | USER_WRITE , 1) < 0)
+    if (setflags((KERNEL | USER_WRITE), VFS_FD_STDOUT) < 0)
         log_err("VFS", "Failed to set flags special file 1\n This could just be becuase it already exists");
 }
 
@@ -286,17 +305,27 @@ void VFS_Init(void)
 
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         open_files[i].exists = false;
-        open_files[i].file = NULL;
+        open_files[i].file   = NULL;
     }
 
     const char* rd = config_get("bootdisk", "iso");
-    if(strcmp(rd, "iso") == 0) {
+    if (strcmp(rd, "iso") == 0) {
         log_info("VFS", "Using ramdisk");
         ramdisk_init_fs();
         rootDriveType = RAMDISK;
 
-        create_special_files();
+        block_device_t* imgdev = image_create_blockdev("hdaimg", "hdd.img");
+        if (imgdev) {
+            imagefs = ext2_mount(imgdev);
+            if (imagefs)
+                log_info("VFS", "hdd.img mounted as read-only image layer");
+            else
+                log_warn("VFS", "hdd.img block device created but ext2_mount failed");
+        } else {
+            log_warn("VFS", "hdd.img module not found — image layer disabled");
+        }
 
+        create_special_files();
         return;
     }
 
@@ -316,10 +345,10 @@ void VFS_Init(void)
             panic("VFS", "Mounted root drive but failed to mount EXT2 fs");
         }
 
-        rootdrive = bd;
-        rootfs = efs;
+        rootdrive     = bd;
+        rootfs        = efs;
         rootDriveType = DISK;
-        mounted = true;
+        mounted       = true;
 
         create_special_files();
     }
@@ -328,8 +357,11 @@ void VFS_Init(void)
 void VFS_Unmount(void)
 {
     if (mounted)
-    {
         ext2_unmount(rootfs);
+
+    if (imagefs) {
+        ext2_unmount(imagefs);
+        imagefs = NULL;
     }
 }
 
@@ -338,7 +370,9 @@ int VFS_Set_Pos(int fd, uint32_t pos, bool privileged)
     if (fd < 0 || fd >= MAX_OPEN_FILES)
         return -1;
     
-    if (open_files[fd].exists && open_files[fd].disk_type == DISK) {
+    if (open_files[fd].exists &&
+        (open_files[fd].disk_type == DISK ||
+         open_files[fd].disk_type == IMAGE)) {
         if (!open_files[fd].file)
             return -1;
         

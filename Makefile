@@ -11,10 +11,11 @@ include build_scripts/toolchain.mk
 #
 iso_image: $(BUILD_DIR)/nbos.iso
 
-$(BUILD_DIR)/nbos.iso: kernel
+$(BUILD_DIR)/nbos.iso: kernel harddisk_image
 	@mkdir -p $(BUILD_DIR)/iso
 	@echo "--> Copying target files (including Limine)..."
 	@cp -r target/* $(BUILD_DIR)/iso/
+	@cp $(BUILD_DIR)/harddisk.img $(BUILD_DIR)/iso/hdd.img
 	@cp $(BUILD_DIR)/kernel.bin $(BUILD_DIR)/iso/boot
 	@echo "--> Creating hybrid BIOS+UEFI ISO image..."
 	@xorriso -as mkisofs \

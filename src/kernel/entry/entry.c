@@ -21,6 +21,8 @@
 #include <hal/vfs.h>
 #include <drivers/disk/ata.h>
 
+#include <block/block_image.h>;
+
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 
