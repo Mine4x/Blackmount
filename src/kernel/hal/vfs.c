@@ -333,6 +333,11 @@ void VFS_Init(void)
     get_value_by_key(rd, 0, type, sizeof(type));
     if (strcmp(type, "ata") == 0) {
         log_info("VFS", "Using ATA with EXT2");
+        log_warn("VFS", "ATA wont work on most systems!");
+
+        ata_init();
+        log_ok("VFS", "Started ATA driver");
+
         block_device_t* bd = ata_create_primary_blockdev("root");
         if (bd == NULL) {
             panic("VFS", "Failed to mount root drive\nHELP: Try to mount the drive from another OS and make sure that:\nThe drive is correctly configured in /etc/kernel.conf");

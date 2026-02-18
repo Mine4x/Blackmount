@@ -126,6 +126,14 @@ struct limine_framebuffer_response* limine_get_fb() {
     return framebuffer;
 }
 
+void* limine_get_rsdp(void) {
+    return rsdp;
+}
+
+uint64_t limine_get_hddm(void) {
+    return hhdm_offset;
+}
+
 void* limine_get_module(const char* name, uint64_t* out_size) {
 
     if (!modules)
