@@ -116,7 +116,7 @@ void pmm_init(void) {
     for (uint64_t i = 0; i < memmap->entry_count; i++) {
         struct limine_memmap_entry* entry = memmap->entries[i];
         
-        if (entry->type == LIMINE_MEMMAP_KERNEL_AND_MODULES ||
+        if (entry->type == LIMINE_MEMMAP_EXECUTABLE_AND_MODULES ||
             entry->type == LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE) {
             uint64_t base_page = entry->base / PAGE_SIZE;
             uint64_t page_count = (entry->length + PAGE_SIZE - 1) / PAGE_SIZE;
