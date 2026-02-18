@@ -48,7 +48,7 @@ bool ata_flush_cache(uint8_t bus, uint8_t drive);
 void ata_read_sector(uint32_t lba, uint8_t* buffer);
 void ata_write_sector(uint32_t lba, uint8_t* buffer);
 
-block_device_t* ata_create_primary_blockdev();
+block_device_t* ata_create_primary_blockdev(const char* name);
 
 /* Run basic ATA diagnostics (destructive: writes sector 0) */
 void test_ata(void);

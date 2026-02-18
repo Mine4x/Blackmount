@@ -3,6 +3,7 @@
 #include <debug.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <panic/panic.h>
 
 #define MODULE "PAGE FAULT"
 #define MODULE_DF "DOUBLE FAULT"
@@ -49,12 +50,8 @@ void x86_64_PageFault_Handler(Registers* regs) {
     log_debug(MODULE, "  Error code: 0x%lx", err);
     
     log_crit(MODULE, "Cannot recover - halting system");
-    printf("\nKERNEL PANIC: Page Fault at 0x%016lx\n", faulting_address);
-    
-    __asm__ volatile("cli");
-    for (;;) {
-        __asm__ volatile("hlt");
-    }
+
+    panic("Pagefault exception", "Pagefault triggerd\nIf you are running on qemu check the output for more information.");
 }
 
 
@@ -75,13 +72,8 @@ void x86_64_DoubleFault_Handler(Registers* regs) {
     log_warn(MODULE_DF, "  - IST stack corruption");
     
     log_crit(MODULE_DF, "System halted - cannot recover");
-    printf("\nKERNEL PANIC: Double Fault\n");
     
-    // Double faults are unrecoverable
-    __asm__ volatile("cli");
-    for(;;) {
-        __asm__ volatile("hlt");
-    }
+    panic("Doublefault exception", "Doublefault triggerd\nIf you are running on qemu check the output for more information.");
 }
 
 void x86_64_PageFault_Initialize(void) {
@@ -89,11 +81,6 @@ void x86_64_PageFault_Initialize(void) {
     x86_64_ISR_RegisterHandler(14, x86_64_PageFault_Handler);
     
     // Register double fault handler (interrupt 8)
-    // Recommended: Use IST for double fault to ensure valid stack
-    // x86_64_IDT_SetGateWithIST(8, x86_64_DoubleFault_Handler, 
-    //                           x86_64_GDT_CODE_SEGMENT,
-    //                           IDT_FLAG_GATE_INTERRUPT | IDT_FLAG_RING0 | IDT_FLAG_PRESENT,
-    //                           1);  // Use IST entry 1 for dedicated stack
     x86_64_ISR_RegisterHandler(8, x86_64_DoubleFault_Handler);
     
     log_ok("PAGING", "Page fault and double fault handlers installed");

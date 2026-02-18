@@ -487,7 +487,7 @@ void ata_write_sector(uint32_t lba, uint8_t* buffer) {
     ata_write_sectors(0, 0, lba, 1, buffer);  // Primary master
 }
 
-block_device_t* ata_create_primary_blockdev() {
+block_device_t* ata_create_primary_blockdev(const char* name) {
     // Check if primary master exists
     ata_device_t* dev = ata_get_device(0, 0);
     if (!dev) {
@@ -498,7 +498,7 @@ block_device_t* ata_create_primary_blockdev() {
     log_info("ATA", "Creating block device for primary master: %s", dev->model);
     
     block_device_t* blockdev = ata_create_blockdev(
-        "hda",           // name
+        name,           // name
         0,               // bus (primary)
         0,               // drive (master)
         dev->sector_count // sectors

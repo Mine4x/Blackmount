@@ -65,3 +65,22 @@ void strcpy(char* dst, const char* src) {
 int strcmp(const char* a, const char* b) {
     return str_cmp(a, b);
 }
+
+
+char *strncpy(char *dest, const char *src, size_t n) {
+    size_t i = 0;
+
+    // Copy characters from src to dest
+    while (i < n && src[i] != '\0') {
+        dest[i] = src[i];
+        i++;
+    }
+
+    // Pad with null bytes if src is shorter than n
+    while (i < n) {
+        dest[i] = '\0';
+        i++;
+    }
+
+    return dest;
+}

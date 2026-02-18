@@ -2,6 +2,7 @@
 #include "idt.h"
 #include "gdt.h"
 #include "io.h"
+#include <panic/panic.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <debug.h>
@@ -80,8 +81,8 @@ void x86_64_ISR_Handler(Registers* regs)
 
         log_crit(MODULE, "  interrupt=%x  errorcode=%lx", regs->interrupt, regs->error);
         log_crit(MODULE, "KERNEL PANIC!");
-        printf("KERNEL PANIC!\n");
-        x86_64_Panic();
+
+        panic("ISR", "Unhandled exception\nIf you are running on qemu check the output for more information.");
     }
 }
 

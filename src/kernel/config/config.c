@@ -63,28 +63,37 @@ void loadConfig(void) {
         uint32_t k = 0;
         uint32_t v = 0;
 
-        while (i < size && buffer[i] != '=' && buffer[i] != '\n') {
+        // Parse key
+        while (i < size && buffer[i] != '=' && buffer[i] != '\n' && buffer[i] != '#') {
             if (k < MAX_KEY_LEN - 1)
                 key[k++] = buffer[i];
             i++;
         }
         key[k] = 0;
 
+        // Skip '='
         if (i < size && buffer[i] == '=')
             i++;
 
-        while (i < size && buffer[i] != '\n') {
+        // Parse value
+        while (i < size && buffer[i] != '\n' && buffer[i] != '#') {
             if (v < MAX_VALUE_LEN - 1)
                 value[v++] = buffer[i];
             i++;
         }
         value[v] = 0;
 
+        // Skip comment if present
+        while (i < size && buffer[i] != '\n')
+            i++;
+
+        // Add config if key exists
         if (k > 0) {
             log_info("Config", "Got config %s = %s", key, value);
             config_add(key, value);
         }
 
+        // Skip newline
         if (i < size && buffer[i] == '\n')
             i++;
     }

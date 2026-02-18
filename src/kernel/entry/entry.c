@@ -18,6 +18,10 @@
 #include <syscalls/scman.h>
 #include <arch/x86_64/io.h>
 #include <halt.h>
+#include <hal/vfs.h>
+#include <drivers/disk/ata.h>
+
+#include <block/block_image.h>;
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -56,6 +60,12 @@ void kmain(void)
 
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
+
+    ata_init();
+    log_ok("Boot", "Initialized ATA Driver");
+
+    VFS_Init();
+    log_ok("Boot", "Initialized VFS");
 
     timer_init();
     log_ok("Boot", "Initialized timer");

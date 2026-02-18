@@ -8,7 +8,7 @@ int32_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
     (void)unused1;
     (void)unused2;
 
-    return VFS_Write(
+    return VFS_Write_old(
         (fd_t)fd,
         (uint8_t*)buf,
         (size_t)count

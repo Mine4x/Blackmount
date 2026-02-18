@@ -8,7 +8,7 @@
 
 void fputc(char c, fd_t file)
 {
-    VFS_Write(file, &c, sizeof(c));
+    VFS_Write_old(file, &c, sizeof(c));
 }
 
 void fputs(const char* str, fd_t file)
