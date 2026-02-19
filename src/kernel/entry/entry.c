@@ -23,6 +23,7 @@
 
 #include <block/block_image.h>
 #include <drivers/acpi/acpi.h>
+#include <drivers/pci/pci.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -62,6 +63,9 @@ void kmain(void)
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
 
+    x86_64_PageFault_Initialize();
+    log_ok("Boot", "Initialized Pagefault handler");
+
     VFS_Init();
     log_ok("Boot", "Initialized VFS");
 
@@ -72,9 +76,10 @@ void kmain(void)
     log_ok("Boot", "Initialized initial drivers");
 
     acpi_init();
+    log_ok("Boot", "Initialized acpi");
 
-    x86_64_PageFault_Initialize();
-    log_ok("Boot", "Initialized Pagefault handler");
+    pci_init();
+    log_ok("Boot", "Initialized pci");
 
     proc_init();
     log_ok("Boot", "Initialized Multitasking");
