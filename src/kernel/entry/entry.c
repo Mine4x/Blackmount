@@ -20,13 +20,18 @@
 #include <halt.h>
 #include <hal/vfs.h>
 #include <drivers/disk/ata.h>
-
 #include <block/block_image.h>
 #include <drivers/acpi/acpi.h>
 #include <drivers/pci/pci.h>
+#include <panic/panic.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
+
+void ok(const char* string)
+{
+    printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
+}
 
 void kmain(void)
 {
@@ -53,44 +58,58 @@ void kmain(void)
         log_info("Fonts", "Using fallback font.");
     }
     log_ok("Boot", "Initialized Text rendering");
-    
-    init_heap();
-    log_ok("Boot", "Initialized Heap");
-
-    loadConfig();
-    log_ok("Boot", "Loaded Kernel Config");
+    ok("Initialized Text rendering");
 
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
+    ok("Initialized HAL/Interrupts");
 
     x86_64_PageFault_Initialize();
     log_ok("Boot", "Initialized Pagefault handler");
+    ok("Initialized PageFault Handler");
 
-    VFS_Init();
-    log_ok("Boot", "Initialized VFS");
+    init_heap();
+    log_ok("Boot", "Initialized Heap");
+    ok("Initialized Heap");
 
     timer_init();
     log_ok("Boot", "Initialized timer");
-
-    drivers_init();
-    log_ok("Boot", "Initialized initial drivers");
+    ok("Initialized PIT");
 
     acpi_init();
     log_ok("Boot", "Initialized acpi");
+    ok("Initialized ACPI");
 
     pci_init();
     log_ok("Boot", "Initialized pci");
+    ok("Initialized PCI");
+
+    loadConfig();
+    log_ok("Boot", "Loaded Kernel Config");
+    ok("Loaded Kernel Config");
+    
+    VFS_Init();
+    log_ok("Boot", "Initialized VFS");
+    ok("Initialized VFS");
+
+    drivers_init();
+    log_ok("Boot", "Initialized initial drivers");
+    ok("Initialized initial drivers");
 
     proc_init();
     log_ok("Boot", "Initialized Multitasking");
+    ok("Initialized Multitasking");
 
     log_info("Kernel", "Loading syscalls");
     syscalls_init();
     register_syscalls();
+    log_ok("Kernel", "Loaded and registerd syscalls");
+    ok("Loaded and registerd syscalls");
 
     x86_64_EnableInterrupts();
 
     log_ok("Kernel", "Initialized all imortant systems");
+    ok("Kernel Started completly");
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
     
