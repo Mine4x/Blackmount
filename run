@@ -1,1 +1,11 @@
-qemu-system-x86_64 -debugcon stdio -cdrom build/nbos.iso -hda build/harddisk.img -boot d -m 512M 
+qemu-system-x86_64 \
+  -machine q35 \
+  -cpu max \
+  -m 512M \
+  -smp 4 \
+  -debugcon stdio \
+  -cdrom build/nbos.iso \
+  -hda build/harddisk.img \
+  -boot d \
+  -no-reboot \
+  -no-shutdown

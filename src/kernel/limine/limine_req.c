@@ -10,41 +10,87 @@
 #include <debug.h>
 
 __attribute__((used, section(".limine_requests")))
-volatile struct limine_bootloader_info_request bootloader_info_request =
-    LIMINE_BOOTLOADER_INFO_REQUEST;
+static volatile uint64_t limine_requests_start[] =
+    LIMINE_REQUESTS_START_MARKER;
 
 __attribute__((used, section(".limine_requests")))
-volatile struct limine_hhdm_request hhdm_request =
-    LIMINE_HHDM_REQUEST;
+volatile struct limine_bootloader_info_request bootloader_info_request = {
+    .id = LIMINE_BOOTLOADER_INFO_REQUEST_ID,
+    .revision = 0,
+    .response = NULL
+};
 
 __attribute__((used, section(".limine_requests")))
-volatile struct limine_memmap_request memmap_request =
-    LIMINE_MEMMAP_REQUEST;
+volatile struct limine_hhdm_request hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST_ID,
+    .revision = 0,
+    .response = NULL
+};
 
 __attribute__((used, section(".limine_requests")))
-volatile struct limine_framebuffer_request framebuffer_request =
-    LIMINE_FRAMEBUFFER_REQUEST;
+volatile struct limine_memmap_request memmap_request = {
+    .id = LIMINE_MEMMAP_REQUEST_ID,
+    .revision = 0,
+    .response = NULL
+};
 
 __attribute__((used, section(".limine_requests")))
-volatile struct limine_smp_request smp_request =
-    LIMINE_SMP_REQUEST;
+volatile struct limine_framebuffer_request framebuffer_request = {
+    .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
+    .revision = 0,
+    .response = NULL
+};
 
 __attribute__((used, section(".limine_requests")))
-volatile struct limine_module_request module_request =
-    LIMINE_MODULE_REQUEST;
+volatile struct limine_mp_request mp_request = {
+    .id = LIMINE_MP_REQUEST_ID,
+    .revision = 0,
+    .response = NULL,
+    .flags = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+volatile struct limine_module_request module_request = {
+    .id = LIMINE_MODULE_REQUEST_ID,
+    .revision = 0,
+    .response = NULL,
+    .internal_module_count = 0,
+    .internal_modules = NULL
+};
+
+__attribute__((used, section(".limine_requests")))
+volatile struct limine_rsdp_request rsdp_request = {
+    .id = LIMINE_RSDP_REQUEST_ID,
+    .revision = 0,
+    .response = NULL
+};
+
+
+__attribute__((used, section(".limine_requests")))
+static volatile uint64_t limine_requests_end[] =
+    LIMINE_REQUESTS_END_MARKER;
+
 
 uint64_t hhdm_offset = 0;
 
-struct limine_bootloader_info_response* bootloader_info = 0;
-struct limine_memmap_response* memmap = 0;
-struct limine_framebuffer_response* framebuffer = 0;
-struct limine_smp_response* smp_info = 0;
-struct limine_module_response* modules = 0;
+struct limine_bootloader_info_response* bootloader_info = NULL;
+struct limine_memmap_response* memmap = NULL;
+struct limine_framebuffer_response* framebuffer = NULL;
+struct limine_mp_response* mp_info = NULL;
+struct limine_module_response* modules = NULL;
+struct limine_rsdp_response* rsdp_res = NULL;
+
+void* rsdp = NULL;
 
 void limine_init(void) {
 
     if (bootloader_info_request.response) {
         bootloader_info = bootloader_info_request.response;
+    }
+
+    if (rsdp_request.response) {
+        rsdp_res = rsdp_request.response;
+        rsdp = rsdp_res->address;
     }
 
     if (hhdm_request.response) {
@@ -55,8 +101,8 @@ void limine_init(void) {
         memmap = memmap_request.response;
     }
 
-    if (smp_request.response) {
-        smp_info = smp_request.response;
+    if (mp_request.response) {
+        mp_info = mp_request.response;
     }
 
     if (module_request.response) {
@@ -66,19 +112,26 @@ void limine_init(void) {
         log_info("Limine", "Module count: %d", modules->module_count);
     }
 
-    if (framebuffer_request.response) {
-        framebuffer = framebuffer_request.response;
+    if (framebuffer_request.response &&
+        framebuffer_request.response->framebuffer_count > 0) {
 
-        if (framebuffer->framebuffer_count > 0) {
-            log_ok("Limine", "Got Framebuffer");
-        } else {
-            log_crit("Limine", "UNABLE TO GET FRAMEBUFFER");
-        }
+        framebuffer = framebuffer_request.response;
+        log_ok("Limine", "Got Framebuffer");
+    } else {
+        log_crit("Limine", "UNABLE TO GET FRAMEBUFFER");
     }
 }
 
 struct limine_framebuffer_response* limine_get_fb() {
     return framebuffer;
+}
+
+void* limine_get_rsdp(void) {
+    return rsdp;
+}
+
+uint64_t limine_get_hddm(void) {
+    return hhdm_offset;
 }
 
 void* limine_get_module(const char* name, uint64_t* out_size) {

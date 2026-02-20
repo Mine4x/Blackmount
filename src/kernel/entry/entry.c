@@ -21,7 +21,9 @@
 #include <hal/vfs.h>
 #include <drivers/disk/ata.h>
 
-#include <block/block_image.h>;
+#include <block/block_image.h>
+#include <drivers/acpi/acpi.h>
+#include <drivers/pci/pci.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -61,8 +63,8 @@ void kmain(void)
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
 
-    ata_init();
-    log_ok("Boot", "Initialized ATA Driver");
+    x86_64_PageFault_Initialize();
+    log_ok("Boot", "Initialized Pagefault handler");
 
     VFS_Init();
     log_ok("Boot", "Initialized VFS");
@@ -73,8 +75,11 @@ void kmain(void)
     drivers_init();
     log_ok("Boot", "Initialized initial drivers");
 
-    x86_64_PageFault_Initialize();
-    log_ok("Boot", "Initialized Pagefault handler");
+    acpi_init();
+    log_ok("Boot", "Initialized acpi");
+
+    pci_init();
+    log_ok("Boot", "Initialized pci");
 
     proc_init();
     log_ok("Boot", "Initialized Multitasking");
