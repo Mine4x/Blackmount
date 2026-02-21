@@ -39,7 +39,6 @@ void fprintf_unsigned(fd_t file, unsigned long long number, int radix)
     char buffer[32];
     int pos = 0;
 
-    // convert number to ASCII
     do 
     {
         unsigned long long rem = number % radix;
@@ -47,7 +46,6 @@ void fprintf_unsigned(fd_t file, unsigned long long number, int radix)
         buffer[pos++] = g_HexChars[rem];
     } while (number > 0);
 
-    // print number in reverse order
     while (--pos >= 0)
         fputc(buffer[pos], file);
 }
@@ -93,6 +91,20 @@ void vfprintf(fd_t file, const char* fmt, va_list args)
                     case 'l':   length = PRINTF_LENGTH_LONG;
                                 state = PRINTF_STATE_LENGTH_LONG;
                                 break;
+                    case '0':
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4':
+                    case '5':
+                    case '6':
+                    case '7':
+                    case '8':
+                    case '9':
+                    case '-':
+                    case '+':
+                    case ' ':
+                    case '#':   break;
                     default:    goto PRINTF_STATE_SPEC_;
                 }
                 break;
@@ -122,8 +134,7 @@ void vfprintf(fd_t file, const char* fmt, va_list args)
                     case 'c':   fputc((char)va_arg(args, int), file);
                                 break;
 
-                    case 's':   
-                                fputs(va_arg(args, const char*), file);
+                    case 's':   fputs(va_arg(args, const char*), file);
                                 break;
 
                     case '%':   fputc('%', file);
@@ -144,7 +155,6 @@ void vfprintf(fd_t file, const char* fmt, va_list args)
                     case 'o':   radix = 8; sign = false; number = true;
                                 break;
 
-                    // ignore invalid spec
                     default:    break;
                 }
 
@@ -174,17 +184,16 @@ void vfprintf(fd_t file, const char* fmt, va_list args)
                         case PRINTF_LENGTH_SHORT:
                         case PRINTF_LENGTH_DEFAULT:     fprintf_unsigned(file, va_arg(args, unsigned int), radix);
                                                         break;
-                                                        
-                        case PRINTF_LENGTH_LONG:        fprintf_unsigned(file, va_arg(args, unsigned  long), radix);
+
+                        case PRINTF_LENGTH_LONG:        fprintf_unsigned(file, va_arg(args, unsigned long), radix);
                                                         break;
 
-                        case PRINTF_LENGTH_LONG_LONG:   fprintf_unsigned(file, va_arg(args, unsigned  long long), radix);
+                        case PRINTF_LENGTH_LONG_LONG:   fprintf_unsigned(file, va_arg(args, unsigned long long), radix);
                                                         break;
                         }
                     }
                 }
 
-                // reset state
                 state = PRINTF_STATE_NORMAL;
                 length = PRINTF_LENGTH_DEFAULT;
                 radix = 10;
@@ -208,7 +217,7 @@ void fprintf(fd_t file, const char* fmt, ...)
 void fprint_buffer(fd_t file, const char* msg, const void* buffer, uint32_t count)
 {
     const uint8_t* u8Buffer = (const uint8_t*)buffer;
-    
+
     fputs(msg, file);
     for (uint16_t i = 0; i < count; i++)
     {
