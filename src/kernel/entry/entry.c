@@ -24,6 +24,7 @@
 #include <drivers/acpi/acpi.h>
 #include <drivers/pci/pci.h>
 #include <panic/panic.h>
+#include <mem/dma.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -71,6 +72,10 @@ void kmain(void)
     init_heap();
     log_ok("Boot", "Initialized Heap");
     ok("Initialized Heap");
+
+    dma_init();
+    log_ok("boot", "Initialized DMA Allocator");
+    ok("Initialized DMA Allocator");
 
     timer_init();
     log_ok("Boot", "Initialized timer");
