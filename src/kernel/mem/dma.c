@@ -3,30 +3,18 @@
 #include "vmm.h"
 #include <limine/limine_req.h>
 #include <memory.h>
+#include <util/spinlock.h>
 
 #define DMA_VIRT_BASE        0xFFFFE00000000000ULL
-#define DMA_VIRT_PAGE_COUNT  65536UL          /* 65536 × 4KiB = 256 MiB      */
+#define DMA_VIRT_PAGE_COUNT  65536UL
 
 #define ISA_LIMIT_PHYS       (16ULL * 1024 * 1024)
 
 #define ISA_POOL_PAGES       64
-
 #define META_POOL_CAP        256
-
 #define ISA_POOL_MAX_TRIES   (ISA_POOL_PAGES * 8)
 
-
-typedef struct { volatile int locked; } spinlock_t;
 #define SPINLOCK_INIT { 0 }
-
-static inline void spin_lock(spinlock_t *l) {
-    while (__atomic_test_and_set(&l->locked, __ATOMIC_ACQUIRE))
-        __asm__ volatile("pause" ::: "memory");
-}
-
-static inline void spin_unlock(spinlock_t *l) {
-    __atomic_clear(&l->locked, __ATOMIC_RELEASE);
-}
 
 static uint64_t   virt_bitmap[DMA_VIRT_PAGE_COUNT / 64];
 static spinlock_t virt_lock = SPINLOCK_INIT;
@@ -40,19 +28,18 @@ static void *virt_range_alloc(size_t pages) {
         if (free) {
             if (!run) start = i;
             if (++run == pages) {
-                /* Mark all pages in the run as used. */
                 for (size_t j = start; j <= i; j++)
                     virt_bitmap[j >> 6] |= 1ULL << (j & 63);
                 spin_unlock(&virt_lock);
                 return (void *)(DMA_VIRT_BASE + start * PAGE_SIZE);
             }
         } else {
-            run = 0; /* Reset run on any occupied page. */
+            run = 0;
         }
     }
 
     spin_unlock(&virt_lock);
-    return NULL; /* No contiguous run of `pages` found. */
+    return NULL;
 }
 
 static void virt_range_free(void *virt, size_t pages) {
@@ -65,9 +52,9 @@ static void virt_range_free(void *virt, size_t pages) {
 
 typedef struct isa_node { uint64_t phys; struct isa_node *next; } isa_node_t;
 
-static isa_node_t  isa_nodes[ISA_POOL_PAGES]; /* storage for list nodes       */
-static isa_node_t *isa_free_list = NULL;       /* head of the free list        */
-static int         isa_pool_size = 0;          /* pages actually reserved      */
+static isa_node_t  isa_nodes[ISA_POOL_PAGES];
+static isa_node_t *isa_free_list = NULL;
+static int         isa_pool_size = 0;
 static spinlock_t  isa_lock = SPINLOCK_INIT;
 
 static void isa_pool_init(void) {
@@ -76,10 +63,10 @@ static void isa_pool_init(void) {
          tries++)
     {
         void *p = pmm_alloc();
-        if (!p) break; /* PMM exhausted */
+        if (!p) break;
 
         if ((uint64_t)p >= ISA_LIMIT_PHYS) {
-            pmm_free(p); /* Too high — give it back and keep trying. */
+            pmm_free(p);
             continue;
         }
 
@@ -141,8 +128,6 @@ static void meta_free(dma_buf_t *buf) {
 
 #define DMA_MAP_FLAGS  (PAGE_PRESENT | PAGE_WRITE | PAGE_NOCACHE | PAGE_GLOBAL)
 
-
-
 void dma_init(void) {
     isa_pool_init();
 }
@@ -174,18 +159,14 @@ dma_buf_t *dma_alloc(size_t size, int zone) {
         phys = (uint64_t)p;
     }
 
-
     void *virt = virt_range_alloc(pages);
     if (!virt) goto err_free_phys;
-
 
     address_space_t *ks = vmm_get_kernel_space();
     if (!vmm_map_range(ks, virt, (void *)phys, pages, DMA_MAP_FLAGS))
         goto err_free_virt;
 
-
     memset(virt, 0, pages * PAGE_SIZE);
-
 
     dma_buf_t *buf = meta_alloc();
     if (!buf) goto err_unmap;
@@ -219,11 +200,10 @@ void dma_free(dma_buf_t *buf) {
     vmm_unmap_range(ks, buf->virt, buf->pages);
     virt_range_free(buf->virt, buf->pages);
 
-    if (buf->zone == DMA_ZONE_ISA && buf->pages == 1) {
-        isa_page_free(buf->phys);      /* → ISA pool */
-    } else {
-        pmm_free_pages((void *)buf->phys, buf->pages); /* → PMM */
-    }
+    if (buf->zone == DMA_ZONE_ISA && buf->pages == 1)
+        isa_page_free(buf->phys);
+    else
+        pmm_free_pages((void *)buf->phys, buf->pages);
 
     meta_free(buf);
 }
