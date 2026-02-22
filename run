@@ -8,4 +8,5 @@ qemu-system-x86_64 \
   -hda build/harddisk.img \
   -boot d \
   -no-reboot \
-  -no-shutdown
+  -no-shutdown \
+  -device qemu-xhci,id=xhci

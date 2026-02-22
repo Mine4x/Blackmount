@@ -9,9 +9,6 @@
 
 #define PCI_MODULE "PCI"
 
-extern void x86_64_IRQ_RegisterHandler(int irq, IRQHandler handler);
-extern void x86_64_IRQ_Unmask(int irq);
-
 static inline void out32(uint16_t port, uint32_t val) {
     __asm__ volatile ("outl %0, %1" :: "a"(val), "Nd"(port));
 }
