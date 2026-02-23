@@ -25,7 +25,7 @@
 #include <drivers/pci/pci.h>
 #include <panic/panic.h>
 #include <mem/dma.h>
-#include <drivers/usb/xhci.h>
+#include <drivers/usb/xhci_old.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
