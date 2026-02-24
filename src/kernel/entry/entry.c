@@ -26,6 +26,7 @@
 #include <panic/panic.h>
 #include <mem/dma.h>
 #include <drivers/usb/xhci_old.h>
+#include <drivers/usb/xhci/xhci.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -90,7 +91,8 @@ void kmain(void)
     log_ok("Boot", "Initialized pci");
     ok("Initialized PCI");
 
-    xhci_init();
+    //xhci_init();
+    xhci_init_device();
     log_ok("Boot", "Initialized xHCI");
     ok("Initialized xHCI");
 
