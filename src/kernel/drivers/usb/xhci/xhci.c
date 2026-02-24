@@ -5,6 +5,7 @@
 #include <drivers/pci/pci.h>
 #include "xhci_mem.h"
 #include "xhci_regs.h"
+#include <timer/timer.h>
 
 dma_buf_t* xhc_block;
 pci_device_t* xhc_dev;
@@ -76,6 +77,68 @@ static void _log_capability_registers() {
     log_info(XHCI_MOD, "");
 }
 
+
+static void _log_operational_registers() {
+    log_info(XHCI_MOD, "===== Xhci Operational Registers (0x%llx) =====", (uint64_t)m_op_regs);
+    log_info(XHCI_MOD, "    usbcmd     : 0x%x", m_op_regs->usbcmd);
+    log_info(XHCI_MOD, "    usbsts     : 0x%x", m_op_regs->usbsts);
+    log_info(XHCI_MOD, "    pagesize   : 0x%x", m_op_regs->pagesize);
+    log_info(XHCI_MOD, "    dnctrl     : 0x%x", m_op_regs->dnctrl);
+    log_info(XHCI_MOD, "    crcr       : 0x%llx", m_op_regs->crcr);
+    log_info(XHCI_MOD, "    dcbaap     : 0x%llx", m_op_regs->dcbaap);
+    log_info(XHCI_MOD, "    config     : 0x%x", m_op_regs->config);
+    log_info(XHCI_MOD, "");
+}
+
+
+static int _reset_host_controller() {
+    uint32_t usbcmd = m_op_regs->usbcmd;
+    usbcmd &= ~XHCI_USBCMD_RUN_STOP;
+    m_op_regs->usbcmd = usbcmd;
+
+    uint32_t timeout = 200;
+    while (!(m_op_regs->usbsts & XHCI_USBSTS_HCH)) {
+        if (--timeout <= 0) {
+            log_err(XHCI_MOD, "HC did not halt withing %ums", timeout);
+            return -1;
+        }
+
+        timer_sleep_ms(1);
+    }
+
+    usbcmd = m_op_regs->usbcmd;
+    usbcmd |= XHCI_USBCMD_HCRESET;
+    usbcmd = m_op_regs->usbcmd = usbcmd;
+
+    timeout = 1000;
+    while (
+        m_op_regs->usbcmd & XHCI_USBCMD_HCRESET ||
+        m_op_regs->usbsts & XHCI_USBSTS_CNR
+    ) {
+        if (--timeout <= 0) {
+            log_err(XHCI_MOD, "HC did not reset withing %ums", timeout);
+            return -1;
+        }
+
+        timer_sleep_ms(1);
+    }
+    
+    timer_sleep_ms(50);
+
+    if (m_op_regs->usbcmd != 0)
+        return -1;
+    if (m_op_regs->crcr != 0)
+        return -1;
+    if (m_op_regs->dcbaap != 0)
+        return -1;
+    if (m_op_regs->config != 0)
+        return -1;
+    if (m_op_regs->dnctrl != 0)
+        return -1;
+
+    return 0;
+}
+
 static pci_device_t* get_hc(void) {
     pci_device_t *pci = pci_get_devices();
     while (pci) {
@@ -111,6 +174,13 @@ int xhci_init_device() {
 
     _parse_capability_registers();
     _log_capability_registers();
+    _log_operational_registers();
+
+    if (_reset_host_controller() < 0) {
+        log_err(XHCI_MOD, "Unable to reset host controller");
+        return -1;
+    }
+    _log_operational_registers();
 
     return 0;
 }
