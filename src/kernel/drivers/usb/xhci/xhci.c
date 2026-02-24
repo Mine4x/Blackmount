@@ -6,6 +6,7 @@
 #include "xhci_mem.h"
 #include "xhci_regs.h"
 #include <timer/timer.h>
+#include <heap.h>
 
 dma_buf_t* xhc_block;
 pci_device_t* xhc_dev;
@@ -34,6 +35,9 @@ bool m_port_power_control;
 bool m_port_indicators;
 bool m_light_reset_capability;
 uint32_t m_extended_capabilities_offset;
+
+uint64_t* m_dcbaa;
+uint64_t* m_dcbaa_virt;
 
 static void _parse_capability_registers() {
     m_cap_regs = (volatile xhci_capability_registers_t*)xhc_base;
@@ -156,6 +160,47 @@ static pci_device_t* get_hc(void) {
     return pci;
 }
 
+static void _setup_dcbaa() {
+    size_t dcbaa_size = sizeof(uintptr_t) * (m_max_device_slots + 1);
+
+    dma_buf_t* dcbaa_memblock = alloc_xhci_memory(dcbaa_size);
+
+    m_dcbaa = (uint64_t*)dcbaa_memblock->virt;
+
+    m_dcbaa_virt = kmalloc((m_max_device_slots +1) * sizeof(uint64_t));
+
+    if (m_max_scratchpad_buffers > 0) {
+        dma_buf_t* sp_memblock = alloc_xhci_memory(m_max_scratchpad_buffers * sizeof(uint64_t));
+
+        uint64_t* scratchpad_array = (uint64_t*)sp_memblock->virt;
+
+        for (uint8_t i = 0; i < m_max_scratchpad_buffers; i ++) {
+            void* scratchpad = alloc_xhci_memory(PAGE_SIZE)->virt;
+
+            uint64_t scratchpad_paddr = xhci_get_physical_addr(scratchpad);
+            scratchpad_array[i] = scratchpad_paddr;
+        }
+
+        uint64_t sp_array_pbase = xhci_get_physical_addr(scratchpad_array);
+
+        m_dcbaa[0] = sp_array_pbase;
+
+        m_dcbaa_virt[0] = (uint64_t)scratchpad_array;
+    }
+
+    m_op_regs->dcbaap = xhci_get_physical_addr(m_dcbaa);
+}
+
+static void _configure_operational_registers() {
+    m_op_regs->dnctrl = 0xffff;
+
+    m_op_regs->config = (uint32_t)m_max_device_slots;
+
+    _setup_dcbaa();
+
+    // TODO: Setup command ring and write CRCR
+}
+
 int xhci_init_device() {
     log_info(XHCI_MOD, "xHCI init!");
 
@@ -174,12 +219,12 @@ int xhci_init_device() {
 
     _parse_capability_registers();
     _log_capability_registers();
-    _log_operational_registers();
 
     if (_reset_host_controller() < 0) {
         log_err(XHCI_MOD, "Unable to reset host controller");
         return -1;
     }
+    _configure_operational_registers();
     _log_operational_registers();
 
     return 0;
