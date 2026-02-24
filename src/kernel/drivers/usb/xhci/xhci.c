@@ -4,9 +4,77 @@
 #include <debug.h>
 #include <drivers/pci/pci.h>
 #include "xhci_mem.h"
+#include "xhci_regs.h"
 
 dma_buf_t* xhc_block;
 pci_device_t* xhc_dev;
+uintptr_t xhc_base;
+
+volatile xhci_capability_registers_t* m_cap_regs;
+volatile xhci_operational_registers_t* m_op_regs;
+
+uint8_t m_capability_regs_length;
+    
+// HCSPARAMS1
+uint8_t m_max_device_slots;
+uint8_t m_max_interrupters;
+uint8_t m_max_ports;
+
+// HCSPARAMS2
+uint8_t m_isochronous_scheduling_threshold;
+uint8_t m_erst_max;
+uint8_t m_max_scratchpad_buffers;
+
+// hccparams1
+bool m_64bit_addressing_capability;
+bool m_bandwidth_negotiation_capability;
+bool m_64byte_context_size;
+bool m_port_power_control;
+bool m_port_indicators;
+bool m_light_reset_capability;
+uint32_t m_extended_capabilities_offset;
+
+static void _parse_capability_registers() {
+    m_cap_regs = (volatile xhci_capability_registers_t*)xhc_base;
+
+    m_capability_regs_length = m_cap_regs->caplength;
+
+    m_max_device_slots = XHCI_MAX_DEVICE_SLOTS(m_cap_regs);
+    m_max_interrupters = XHCI_MAX_INTERRUPTERS(m_cap_regs);
+    m_max_ports = XHCI_MAX_PORTS(m_cap_regs);
+
+    m_isochronous_scheduling_threshold = XHCI_IST(m_cap_regs);
+    m_erst_max = XHCI_ERST_MAX(m_cap_regs);
+    m_max_scratchpad_buffers = XHCI_MAX_SCRATCHPAD_BUFFERS(m_cap_regs);
+
+    m_64bit_addressing_capability = XHCI_AC64(m_cap_regs);
+    m_bandwidth_negotiation_capability = XHCI_BNC(m_cap_regs);
+    m_64byte_context_size = XHCI_CSZ(m_cap_regs);
+    m_port_power_control = XHCI_PPC(m_cap_regs);
+    m_port_indicators = XHCI_PIND(m_cap_regs);
+    m_light_reset_capability = XHCI_LHRC(m_cap_regs);
+    m_extended_capabilities_offset = XHCI_XECP(m_cap_regs) * sizeof(uint32_t);
+
+    m_op_regs = (volatile xhci_operational_registers_t*)((uintptr_t)xhc_base + m_capability_regs_length);
+}
+
+static void _log_capability_registers() {
+    log_info(XHCI_MOD, "===== Xhci Capability Registers (0x%llx) =====", (uint64_t)m_cap_regs);
+    log_info(XHCI_MOD, "    Length                : %i", m_capability_regs_length);
+    log_info(XHCI_MOD, "    Max Device Slots      : %i", m_max_device_slots);
+    log_info(XHCI_MOD, "    Max Interrupters      : %i", m_max_interrupters);
+    log_info(XHCI_MOD, "    Max Ports             : %i", m_max_ports);
+    log_info(XHCI_MOD, "    IST                   : %i", m_isochronous_scheduling_threshold);
+    log_info(XHCI_MOD, "    ERST Max Size         : %i", m_erst_max);
+    log_info(XHCI_MOD, "    Scratchpad Buffers    : %i", m_max_scratchpad_buffers);
+    log_info(XHCI_MOD, "    64-bit Addressing     : %s", m_64bit_addressing_capability ? "yes" : "no");
+    log_info(XHCI_MOD, "    Bandwidth Negotiation : %i", m_bandwidth_negotiation_capability);
+    log_info(XHCI_MOD, "    64-byte Context Size  : %s", m_64byte_context_size ? "yes" : "no");
+    log_info(XHCI_MOD, "    Port Power Control    : %i", m_port_power_control);
+    log_info(XHCI_MOD, "    Port Indicators       : %i", m_port_indicators);
+    log_info(XHCI_MOD, "    Light Reset Available : %i", m_light_reset_capability);
+    log_info(XHCI_MOD, "");
+}
 
 static pci_device_t* get_hc(void) {
     pci_device_t *pci = pci_get_devices();
@@ -36,10 +104,13 @@ int xhci_init_device() {
 
     pci_map_bar(xhc_dev, 0);
     pci_bar_t bar = xhc_dev->bars[0];
-    uintptr_t tmp = xhci_map_mmio(bar.virt_base, bar.size);
+    xhc_base = bar.virt_base;
 
-    log_debug(XHCI_MOD, "xHCI vadrr : %0x%llx", tmp);
-    log_debug(XHCI_MOD, "xHCI padrr : %0x%llx", xhci_get_physical_addr((void*)tmp));
+    log_debug(XHCI_MOD, "xHCI vadrr : %0x%llx", xhc_base);
+    log_debug(XHCI_MOD, "xHCI padrr : %0x%llx", xhci_get_physical_addr((void*)xhc_base));
+
+    _parse_capability_registers();
+    _log_capability_registers();
 
     return 0;
 }
