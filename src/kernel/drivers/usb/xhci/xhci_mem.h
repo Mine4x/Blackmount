@@ -56,9 +56,9 @@
 
 uintptr_t xhci_map_mmio(uint64_t pci_bar_address, uint32_t bar_size);
 
-dma_buf_t* alloc_xhci_memory(size_t size);
+void* alloc_xhci_memory(size_t size, size_t alingment, size_t boundary);
 
-void free_xhci_memory(dma_buf_t* memblock);
+void free_xhci_memory(void* memblock);
 
 uintptr_t xhci_get_physical_addr(void* vaddr);
 

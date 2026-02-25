@@ -25,15 +25,18 @@
 #include <drivers/pci/pci.h>
 #include <panic/panic.h>
 #include <mem/dma.h>
-#include <drivers/usb/xhci_old.h>
 #include <drivers/usb/xhci/xhci.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 
-void ok(const char* string)
+static void ok(const char* string)
 {
     printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
+}
+
+static void fail(const char* string) {
+    printf("[\033[1;31mFAILED\x1b[0m] %s\n", string);
 }
 
 void kmain(void)
@@ -91,10 +94,15 @@ void kmain(void)
     log_ok("Boot", "Initialized pci");
     ok("Initialized PCI");
 
-    //xhci_init();
-    xhci_init_device();
-    log_ok("Boot", "Initialized xHCI");
-    ok("Initialized xHCI");
+    int response = xhci_init_device();
+    if (response == 0) {
+        log_ok("Boot", "Initialized xHCI");
+        ok("Initialized xHCI");
+    } else {
+        log_err("Boot", "xHCI init exited with error: %d", response);
+        fail("Unable to initialize xHCI");
+    }
+    
 
     loadConfig();
     log_ok("Boot", "Loaded Kernel Config");

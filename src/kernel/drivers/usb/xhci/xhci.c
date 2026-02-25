@@ -7,8 +7,9 @@
 #include "xhci_regs.h"
 #include <timer/timer.h>
 #include <heap.h>
+#include "xhci_rings.h"
 
-dma_buf_t* xhc_block;
+void* xhc_block;
 pci_device_t* xhc_dev;
 uintptr_t xhc_base;
 
@@ -163,19 +164,19 @@ static pci_device_t* get_hc(void) {
 static void _setup_dcbaa() {
     size_t dcbaa_size = sizeof(uintptr_t) * (m_max_device_slots + 1);
 
-    dma_buf_t* dcbaa_memblock = alloc_xhci_memory(dcbaa_size);
+    void* dcbaa_memblock = alloc_xhci_memory(dcbaa_size, XHCI_DEVICE_CONTEXT_ALIGNMENT, XHCI_DEVICE_CONTEXT_BOUNDARY);
 
-    m_dcbaa = (uint64_t*)dcbaa_memblock->virt;
+    m_dcbaa = (uint64_t*)dcbaa_memblock;
 
     m_dcbaa_virt = kmalloc((m_max_device_slots +1) * sizeof(uint64_t));
 
     if (m_max_scratchpad_buffers > 0) {
-        dma_buf_t* sp_memblock = alloc_xhci_memory(m_max_scratchpad_buffers * sizeof(uint64_t));
+        void* sp_memblock = alloc_xhci_memory(m_max_scratchpad_buffers * sizeof(uint64_t), XHCI_DEVICE_CONTEXT_ALIGNMENT, XHCI_DEVICE_CONTEXT_BOUNDARY);
 
-        uint64_t* scratchpad_array = (uint64_t*)sp_memblock->virt;
+        uint64_t* scratchpad_array = (uint64_t*)sp_memblock;
 
         for (uint8_t i = 0; i < m_max_scratchpad_buffers; i ++) {
-            void* scratchpad = alloc_xhci_memory(PAGE_SIZE)->virt;
+            void* scratchpad = alloc_xhci_memory(PAGE_SIZE, XHCI_SCRATCHPAD_BUFFERS_ALIGNMENT, XHCI_SCRATCHPAD_BUFFER_ARRAY_BOUNDARY);
 
             uint64_t scratchpad_paddr = xhci_get_physical_addr(scratchpad);
             scratchpad_array[i] = scratchpad_paddr;
@@ -198,7 +199,9 @@ static void _configure_operational_registers() {
 
     _setup_dcbaa();
 
-    // TODO: Setup command ring and write CRCR
+    xhci_command_ring_init(XHCI_COMMAND_RING_TRB_COUNT);
+
+    m_op_regs->crcr = xhci_command_ring_get_physical_base() | xhci_command_ring_get_cycle_bit();
 }
 
 int xhci_init_device() {
@@ -206,7 +209,7 @@ int xhci_init_device() {
 
     pci_device_t* hc = get_hc();
     if (!hc) {
-        return;
+        return -1;
     }
     xhc_dev = hc;
 
@@ -222,7 +225,7 @@ int xhci_init_device() {
 
     if (_reset_host_controller() < 0) {
         log_err(XHCI_MOD, "Unable to reset host controller");
-        return -1;
+        return -2;
     }
     _configure_operational_registers();
     _log_operational_registers();

@@ -11,13 +11,39 @@
 #define ISA_LIMIT_PHYS       (16ULL * 1024 * 1024)
 
 #define ISA_POOL_PAGES       64
-#define META_POOL_CAP        256
 #define ISA_POOL_MAX_TRIES   (ISA_POOL_PAGES * 8)
+
+#define META_CAP             256
 
 #define SPINLOCK_INIT { 0 }
 
+#define DMA_MAP_FLAGS  (PAGE_PRESENT | PAGE_WRITE | PAGE_NOCACHE | PAGE_GLOBAL)
+
+typedef struct {
+    void    *virt;
+    uint64_t phys;
+    size_t   size;
+    size_t   pages;
+    int      zone;
+    bool     from_isa_pool;
+    bool     used;
+} meta_t;
+
 static uint64_t   virt_bitmap[DMA_VIRT_PAGE_COUNT / 64];
 static spinlock_t virt_lock = SPINLOCK_INIT;
+
+static meta_t     meta[META_CAP];
+static spinlock_t meta_lock = SPINLOCK_INIT;
+
+typedef struct isa_node {
+    uint64_t phys;
+    struct isa_node *next;
+} isa_node_t;
+
+static isa_node_t  isa_nodes[ISA_POOL_PAGES];
+static isa_node_t *isa_free_list = NULL;
+static int         isa_pool_size = 0;
+static spinlock_t  isa_lock = SPINLOCK_INIT;
 
 static void *virt_range_alloc(size_t pages) {
     spin_lock(&virt_lock);
@@ -49,13 +75,6 @@ static void virt_range_free(void *virt, size_t pages) {
         virt_bitmap[i >> 6] &= ~(1ULL << (i & 63));
     spin_unlock(&virt_lock);
 }
-
-typedef struct isa_node { uint64_t phys; struct isa_node *next; } isa_node_t;
-
-static isa_node_t  isa_nodes[ISA_POOL_PAGES];
-static isa_node_t *isa_free_list = NULL;
-static int         isa_pool_size = 0;
-static spinlock_t  isa_lock = SPINLOCK_INIT;
 
 static void isa_pool_init(void) {
     for (int tries = 0;
@@ -102,136 +121,153 @@ static void isa_page_free(uint64_t phys) {
     pmm_free((void *)phys);
 }
 
-static dma_buf_t  meta_pool[META_POOL_CAP];
-static bool       meta_used[META_POOL_CAP];
-static spinlock_t meta_lock = SPINLOCK_INIT;
-
-static dma_buf_t *meta_alloc(void) {
+static meta_t *meta_alloc(void) {
     spin_lock(&meta_lock);
-    for (int i = 0; i < META_POOL_CAP; i++) {
-        if (!meta_used[i]) {
-            meta_used[i] = true;
+    for (int i = 0; i < META_CAP; i++) {
+        if (!meta[i].used) {
+            meta[i].used = true;
             spin_unlock(&meta_lock);
-            return &meta_pool[i];
+            return &meta[i];
         }
     }
     spin_unlock(&meta_lock);
     return NULL;
 }
 
-static void meta_free(dma_buf_t *buf) {
-    int idx = (int)(buf - meta_pool);
-    spin_lock(&meta_lock);
-    meta_used[idx] = false;
-    spin_unlock(&meta_lock);
+static meta_t *meta_find(void *virt) {
+    for (int i = 0; i < META_CAP; i++) {
+        if (meta[i].used && meta[i].virt == virt)
+            return &meta[i];
+    }
+    return NULL;
 }
 
-#define DMA_MAP_FLAGS  (PAGE_PRESENT | PAGE_WRITE | PAGE_NOCACHE | PAGE_GLOBAL)
+static void meta_free(meta_t *m) {
+    spin_lock(&meta_lock);
+    m->used = false;
+    spin_unlock(&meta_lock);
+}
 
 void dma_init(void) {
     isa_pool_init();
 }
 
-dma_buf_t *dma_alloc(size_t size, int zone) {
+void *dma_alloc(size_t size,
+                size_t alignment,
+                size_t boundary,
+                int zone)
+{
     if (!size) return NULL;
 
-    size_t   pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
-    uint64_t phys  = 0;
-    bool     from_isa_pool = false;
+    if (alignment && (alignment & (alignment - 1)))
+        return NULL;
 
-    if (zone == DMA_ZONE_ISA) {
-        if (pages == 1) {
-            phys = isa_page_alloc();
-            if (!phys) return NULL;
-            from_isa_pool = true;
-        } else {
-            void *p = pmm_alloc_pages(pages);
-            if (!p) return NULL;
-            if ((uint64_t)p >= ISA_LIMIT_PHYS) {
-                pmm_free_pages(p, pages);
-                return NULL;
+    if (boundary && (boundary & (boundary - 1)))
+        return NULL;
+
+    size_t pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    for (;;) {
+
+        uint64_t phys = 0;
+        void *phys_ptr = NULL;
+        bool from_isa_pool = false;
+
+        if (zone == DMA_ZONE_ISA) {
+            if (pages == 1) {
+                phys = isa_page_alloc();
+                if (!phys) return NULL;
+                from_isa_pool = true;
+            } else {
+                phys_ptr = pmm_alloc_pages(pages);
+                if (!phys_ptr) return NULL;
+                phys = (uint64_t)phys_ptr;
+                if (phys >= ISA_LIMIT_PHYS)
+                    goto retry;
             }
-            phys = (uint64_t)p;
+        } else {
+            phys_ptr = pmm_alloc_pages(pages);
+            if (!phys_ptr) return NULL;
+            phys = (uint64_t)phys_ptr;
         }
-    } else {
-        void *p = pmm_alloc_pages(pages);
-        if (!p) return NULL;
-        phys = (uint64_t)p;
+
+        if (alignment && (phys & (alignment - 1)))
+            goto retry;
+
+        if (boundary) {
+            uint64_t end = phys + size - 1;
+            if ((phys & ~(boundary - 1)) != (end & ~(boundary - 1)))
+                goto retry;
+        }
+
+        void *virt = virt_range_alloc(pages);
+        if (!virt)
+            goto retry;
+
+        address_space_t *ks = vmm_get_kernel_space();
+        if (!vmm_map_range(ks, virt, (void *)phys, pages, DMA_MAP_FLAGS)) {
+            virt_range_free(virt, pages);
+            goto retry;
+        }
+
+        memset(virt, 0, pages * PAGE_SIZE);
+
+        meta_t *m = meta_alloc();
+        if (!m) {
+            vmm_unmap_range(ks, virt, pages);
+            virt_range_free(virt, pages);
+            goto retry;
+        }
+
+        m->virt = virt;
+        m->phys = phys;
+        m->size = size;
+        m->pages = pages;
+        m->zone = zone;
+        m->from_isa_pool = from_isa_pool;
+
+        return virt;
+
+retry:
+        if (from_isa_pool)
+            isa_page_free(phys);
+        else if (phys_ptr)
+            pmm_free_pages((void *)phys, pages);
     }
-
-    void *virt = virt_range_alloc(pages);
-    if (!virt) goto err_free_phys;
-
-    address_space_t *ks = vmm_get_kernel_space();
-    if (!vmm_map_range(ks, virt, (void *)phys, pages, DMA_MAP_FLAGS))
-        goto err_free_virt;
-
-    memset(virt, 0, pages * PAGE_SIZE);
-
-    dma_buf_t *buf = meta_alloc();
-    if (!buf) goto err_unmap;
-
-    buf->virt   = virt;
-    buf->phys   = phys;
-    buf->size   = size;
-    buf->pages  = pages;
-    buf->zone   = zone;
-    buf->bounce = (zone == DMA_ZONE_ISA);
-
-    return buf;
-
-err_unmap:
-    vmm_unmap_range(ks, virt, pages);
-err_free_virt:
-    virt_range_free(virt, pages);
-err_free_phys:
-    if (from_isa_pool)
-        isa_page_free(phys);
-    else
-        pmm_free_pages((void *)phys, pages);
-    return NULL;
 }
 
-void dma_free(dma_buf_t *buf) {
-    if (!buf) return;
+void dma_free(void *ptr) {
+    if (!ptr) return;
+
+    meta_t *m = meta_find(ptr);
+    if (!m) return;
 
     address_space_t *ks = vmm_get_kernel_space();
 
-    vmm_unmap_range(ks, buf->virt, buf->pages);
-    virt_range_free(buf->virt, buf->pages);
+    vmm_unmap_range(ks, m->virt, m->pages);
+    virt_range_free(m->virt, m->pages);
 
-    if (buf->zone == DMA_ZONE_ISA && buf->pages == 1)
-        isa_page_free(buf->phys);
+    if (m->from_isa_pool)
+        isa_page_free(m->phys);
     else
-        pmm_free_pages((void *)buf->phys, buf->pages);
+        pmm_free_pages((void *)m->phys, m->pages);
 
-    meta_free(buf);
+    meta_free(m);
 }
 
-void dma_bounce_sync_to_device(dma_buf_t *buf, const void *src, size_t len) {
-    if (!buf || !buf->bounce || !src) return;
-    if (len > buf->size) len = buf->size;
-    memcpy(buf->virt, src, len);
-    dma_cache_flush(buf);
-}
+void dma_cache_flush(void *ptr, size_t size) {
+    if (!ptr) return;
 
-void dma_bounce_sync_from_device(dma_buf_t *buf, void *dst, size_t len) {
-    if (!buf || !buf->bounce || !dst) return;
-    if (len > buf->size) len = buf->size;
-    dma_cache_invalidate(buf);
-    memcpy(dst, buf->virt, len);
-}
-
-void dma_cache_flush(dma_buf_t *buf) {
-    if (!buf) return;
-    uintptr_t addr = (uintptr_t)buf->virt;
-    uintptr_t end  = addr + buf->size;
+    uintptr_t addr = (uintptr_t)ptr;
+    uintptr_t end  = addr + size;
     addr &= ~(uintptr_t)63;
+
     for (; addr < end; addr += 64)
         __asm__ volatile("clflush (%0)" :: "r"(addr) : "memory");
+
     __asm__ volatile("mfence" ::: "memory");
 }
 
-void dma_cache_invalidate(dma_buf_t *buf) {
-    dma_cache_flush(buf);
+void dma_cache_invalidate(void *ptr, size_t size) {
+    dma_cache_flush(ptr, size);
 }
