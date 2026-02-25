@@ -102,6 +102,14 @@ void kmain(void)
         log_err("Boot", "xHCI init exited with error: %d", response);
         fail("Unable to initialize xHCI");
     }
+    response = xhci_start_device();
+    if (response == 0) {
+        log_ok("Boot", "Started xHCI");
+        ok("Started xHCI");
+    } else {
+        log_err("Boot", "xHCI init exited with error: %d", response);
+        fail("Unable to start xHCI");
+    }
     
 
     loadConfig();

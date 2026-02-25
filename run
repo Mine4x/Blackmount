@@ -9,4 +9,5 @@ qemu-system-x86_64 \
   -boot d \
   -no-reboot \
   -no-shutdown \
-  -device qemu-xhci,id=xhci
+  -device qemu-xhci,id=xhci \
+  -trace usb_xhci_* -D /tmp/qemu-xhci.log

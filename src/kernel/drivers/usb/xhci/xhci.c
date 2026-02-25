@@ -68,36 +68,76 @@ static void _parse_capability_registers() {
 }
 
 static void _log_capability_registers() {
-    log_info(XHCI_MOD, "===== Xhci Capability Registers (0x%llx) =====", (uint64_t)m_cap_regs);
-    log_info(XHCI_MOD, "    Length                : %i", m_capability_regs_length);
-    log_info(XHCI_MOD, "    Max Device Slots      : %i", m_max_device_slots);
-    log_info(XHCI_MOD, "    Max Interrupters      : %i", m_max_interrupters);
-    log_info(XHCI_MOD, "    Max Ports             : %i", m_max_ports);
-    log_info(XHCI_MOD, "    IST                   : %i", m_isochronous_scheduling_threshold);
-    log_info(XHCI_MOD, "    ERST Max Size         : %i", m_erst_max);
-    log_info(XHCI_MOD, "    Scratchpad Buffers    : %i", m_max_scratchpad_buffers);
-    log_info(XHCI_MOD, "    64-bit Addressing     : %s", m_64bit_addressing_capability ? "yes" : "no");
-    log_info(XHCI_MOD, "    Bandwidth Negotiation : %i", m_bandwidth_negotiation_capability);
-    log_info(XHCI_MOD, "    64-byte Context Size  : %s", m_64byte_context_size ? "yes" : "no");
-    log_info(XHCI_MOD, "    Port Power Control    : %i", m_port_power_control);
-    log_info(XHCI_MOD, "    Port Indicators       : %i", m_port_indicators);
-    log_info(XHCI_MOD, "    Light Reset Available : %i", m_light_reset_capability);
-    log_info(XHCI_MOD, "");
+    log_debug(XHCI_MOD, "===== Xhci Capability Registers (0x%llx) =====", (uint64_t)m_cap_regs);
+    log_debug(XHCI_MOD, "    Length                : %i", m_capability_regs_length);
+    log_debug(XHCI_MOD, "    Max Device Slots      : %i", m_max_device_slots);
+    log_debug(XHCI_MOD, "    Max Interrupters      : %i", m_max_interrupters);
+    log_debug(XHCI_MOD, "    Max Ports             : %i", m_max_ports);
+    log_debug(XHCI_MOD, "    IST                   : %i", m_isochronous_scheduling_threshold);
+    log_debug(XHCI_MOD, "    ERST Max Size         : %i", m_erst_max);
+    log_debug(XHCI_MOD, "    Scratchpad Buffers    : %i", m_max_scratchpad_buffers);
+    log_debug(XHCI_MOD, "    64-bit Addressing     : %s", m_64bit_addressing_capability ? "yes" : "no");
+    log_debug(XHCI_MOD, "    Bandwidth Negotiation : %i", m_bandwidth_negotiation_capability);
+    log_debug(XHCI_MOD, "    64-byte Context Size  : %s", m_64byte_context_size ? "yes" : "no");
+    log_debug(XHCI_MOD, "    Port Power Control    : %i", m_port_power_control);
+    log_debug(XHCI_MOD, "    Port Indicators       : %i", m_port_indicators);
+    log_debug(XHCI_MOD, "    Light Reset Available : %i", m_light_reset_capability);
+    log_debug(XHCI_MOD, "");
 }
 
 
 static void _log_operational_registers() {
-    log_info(XHCI_MOD, "===== Xhci Operational Registers (0x%llx) =====", (uint64_t)m_op_regs);
-    log_info(XHCI_MOD, "    usbcmd     : 0x%x", m_op_regs->usbcmd);
-    log_info(XHCI_MOD, "    usbsts     : 0x%x", m_op_regs->usbsts);
-    log_info(XHCI_MOD, "    pagesize   : 0x%x", m_op_regs->pagesize);
-    log_info(XHCI_MOD, "    dnctrl     : 0x%x", m_op_regs->dnctrl);
-    log_info(XHCI_MOD, "    crcr       : 0x%llx", m_op_regs->crcr);
-    log_info(XHCI_MOD, "    dcbaap     : 0x%llx", m_op_regs->dcbaap);
-    log_info(XHCI_MOD, "    config     : 0x%x", m_op_regs->config);
-    log_info(XHCI_MOD, "");
+    log_debug(XHCI_MOD, "===== Xhci Operational Registers (0x%llx) =====", (uint64_t)m_op_regs);
+    log_debug(XHCI_MOD, "    usbcmd     : 0x%x", m_op_regs->usbcmd);
+    log_debug(XHCI_MOD, "    usbsts     : 0x%x", m_op_regs->usbsts);
+    log_debug(XHCI_MOD, "    pagesize   : 0x%x", m_op_regs->pagesize);
+    log_debug(XHCI_MOD, "    dnctrl     : 0x%x", m_op_regs->dnctrl);
+    log_debug(XHCI_MOD, "    crcr       : 0x%llx", m_op_regs->crcr);
+    log_debug(XHCI_MOD, "    dcbaap     : 0x%llx", m_op_regs->dcbaap);
+    log_debug(XHCI_MOD, "    config     : 0x%x", m_op_regs->config);
+    log_debug(XHCI_MOD, "");
 }
 
+static int _start_host_controller() {
+    uint32_t usbcmd = m_op_regs->usbcmd;
+    usbcmd |= XHCI_USBCMD_RUN_STOP;
+    usbcmd |= XHCI_USBCMD_INTERRUPTER_ENABLE;
+    m_op_regs->usbcmd = usbcmd;
+
+    const int max_retries = 1000;
+    int retries = 0;
+
+    while (m_op_regs->usbsts & XHCI_USBSTS_HCH) {
+        if (retries++ >= max_retries) {
+            log_err(XHCI_MOD, "Controller failed to start: timeout after %d tries", retries);
+            return -1;
+        }
+
+        timer_sleep_ms(1);
+    }
+
+    if (m_op_regs->usbsts & XHCI_USBSTS_CNR) {
+        log_err(XHCI_MOD, "Controller failed to start: controller not ready");
+        return -2;
+    }
+
+    return 0;
+}
+
+void _log_usbsts() {
+    uint32_t status = m_op_regs->usbsts;
+    log_debug(XHCI_MOD, "===== USBSTS =====");
+    if (status & XHCI_USBSTS_HCH)  log_debug(XHCI_MOD, "    Host Controlled Halted");
+    if (status & XHCI_USBSTS_HSE)  log_debug(XHCI_MOD, "    Host System Error");
+    if (status & XHCI_USBSTS_EINT) log_debug(XHCI_MOD, "    Event Interrupt");
+    if (status & XHCI_USBSTS_PCD)  log_debug(XHCI_MOD, "    Port Change Detect");
+    if (status & XHCI_USBSTS_SSS)  log_debug(XHCI_MOD, "    Save State Status");
+    if (status & XHCI_USBSTS_RSS)  log_debug(XHCI_MOD, "    Restore State Status");
+    if (status & XHCI_USBSTS_SRE)  log_debug(XHCI_MOD, "    Save/Restore Error");
+    if (status & XHCI_USBSTS_CNR)  log_debug(XHCI_MOD, "    Controller Not Ready");
+    if (status & XHCI_USBSTS_HCE)  log_debug(XHCI_MOD, "    Host Controller Error");
+    log_debug(XHCI_MOD, "");
+}
 
 static int _reset_host_controller() {
     uint32_t usbcmd = m_op_regs->usbcmd;
@@ -226,9 +266,9 @@ static void _configure_runtime_registers() {
 
     xhci_event_ring_init(XHCI_EVENT_RING_TRB_COUNT, interrupt_regs);
 
-    log_debug(XHCI_MOD, "ERSTSZ  : 0x%llx\n", interrupt_regs->erstsz);
-    log_debug(XHCI_MOD, "ERSTBA  : 0x%llx\n", interrupt_regs->erstba);
-    log_debug(XHCI_MOD, "ERDP    : 0x%llx\n", interrupt_regs->erdp);
+    log_debug(XHCI_MOD, "ERSTSZ  : 0x%llx", interrupt_regs->erstsz);
+    log_debug(XHCI_MOD, "ERSTBA  : 0x%llx", interrupt_regs->erstba);
+    log_debug(XHCI_MOD, "ERDP    : 0x%llx", interrupt_regs->erdp);
 
     _acknowledge_irq(0);
 }
@@ -265,6 +305,16 @@ int xhci_init_device() {
 }
 
 int xhci_start_device() {
+    _log_usbsts();
+
+    if (_start_host_controller() < 0) {
+        return -1;
+    }
+
+    log_ok(XHCI_MOD, "Controller Started!");
+
+    _log_usbsts();
+
     return 0;
 }
 
