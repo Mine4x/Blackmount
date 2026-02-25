@@ -224,7 +224,11 @@ static void _configure_runtime_registers() {
     iman |= XHCI_IMAN_INTERRUPT_ENABLE;
     interrupt_regs->iman = iman;
 
-    // TODO: Setup event ring
+    xhci_event_ring_init(XHCI_EVENT_RING_TRB_COUNT, interrupt_regs);
+
+    log_debug(XHCI_MOD, "ERSTSZ  : 0x%llx\n", interrupt_regs->erstsz);
+    log_debug(XHCI_MOD, "ERSTBA  : 0x%llx\n", interrupt_regs->erstba);
+    log_debug(XHCI_MOD, "ERDP    : 0x%llx\n", interrupt_regs->erdp);
 
     _acknowledge_irq(0);
 }
