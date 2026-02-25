@@ -15,6 +15,7 @@ uintptr_t xhc_base;
 
 volatile xhci_capability_registers_t* m_cap_regs;
 volatile xhci_operational_registers_t* m_op_regs;
+volatile xhci_runtime_registers_t* m_runtime_regs;
 
 uint8_t m_capability_regs_length;
     
@@ -62,6 +63,8 @@ static void _parse_capability_registers() {
     m_extended_capabilities_offset = XHCI_XECP(m_cap_regs) * sizeof(uint32_t);
 
     m_op_regs = (volatile xhci_operational_registers_t*)((uintptr_t)xhc_base + m_capability_regs_length);
+
+    m_runtime_regs = (volatile xhci_runtime_registers_t*)(xhc_base + m_cap_regs->rtsoff);
 }
 
 static void _log_capability_registers() {
@@ -204,6 +207,28 @@ static void _configure_operational_registers() {
     m_op_regs->crcr = xhci_command_ring_get_physical_base() | xhci_command_ring_get_cycle_bit();
 }
 
+static void _acknowledge_irq(uint8_t interrupter) {
+    volatile xhci_interrupter_registers_t* interrupter_regs = &m_runtime_regs->ir[interrupter];
+
+    uint32_t iman = interrupter_regs->iman;
+    iman |= XHCI_IMAN_INTERRUPT_PENDING;
+    interrupter_regs->iman = iman;
+}
+
+static void _configure_runtime_registers() {
+    m_op_regs->usbsts = XHCI_USBSTS_EINT;
+    
+    volatile xhci_interrupter_registers_t* interrupt_regs = &m_runtime_regs->ir[0];
+
+    uint32_t iman = interrupt_regs->iman;
+    iman |= XHCI_IMAN_INTERRUPT_ENABLE;
+    interrupt_regs->iman = iman;
+
+    // TODO: Setup event ring
+
+    _acknowledge_irq(0);
+}
+
 int xhci_init_device() {
     log_info(XHCI_MOD, "xHCI init!");
 
@@ -229,6 +254,8 @@ int xhci_init_device() {
     }
     _configure_operational_registers();
     _log_operational_registers();
+
+    _configure_runtime_registers();
 
     return 0;
 }
