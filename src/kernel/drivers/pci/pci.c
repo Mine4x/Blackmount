@@ -679,7 +679,7 @@ void pci_init(void)
             for (int bus = (int)g_ecam_entries[i].start_bus;
                  bus <= (int)g_ecam_entries[i].end_bus; bus++)
             {
-                log_debug(PCI_MODULE, "  Scanning bus %d ...", bus);
+                //log_debug(PCI_MODULE, "  Scanning bus %d ...", bus);
                 scan_bus(g_ecam_entries[i].segment, (uint8_t)bus);
             }
         }
