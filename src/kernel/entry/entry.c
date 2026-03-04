@@ -68,11 +68,7 @@ void kmain(void)
 
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
-    ok("Initialized HAL/Interrupts");
-
-    x86_64_PageFault_Initialize();
-    log_ok("Boot", "Initialized Pagefault handler");
-    ok("Initialized PageFault Handler");
+    ok("Initialized HAL");
 
     init_heap();
     log_ok("Boot", "Initialized Heap");
@@ -110,8 +106,6 @@ void kmain(void)
         log_err("Boot", "xHCI init exited with error: %d", response);
         fail("Unable to initialize xHCI");
     }
-    
-    
 
     loadConfig();
     log_ok("Boot", "Loaded Kernel Config");

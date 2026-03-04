@@ -1,74 +1,93 @@
 #include "irq.h"
-#include "pic.h"
-#include "i8259.h"
+#include "isr.h"
 #include "io.h"
-#include <stddef.h>
-#include <util/arrays.h>
-#include "stdio.h"
+#include <drivers/apic/ioapic.h>
+#include <drivers/apic/lapic.h>
 #include <debug.h>
+#include <stddef.h>
 
-#define PIC_REMAP_OFFSET        0x20
-#define MODULE                  "PIC"
+#define MODULE "IRQ"
 
-IRQHandler g_IRQHandlers[16] = {0};
-static const PICDriver* g_Driver = NULL;
+// Expanded handler table — indexed by IDT vector
+static IRQHandler g_IRQHandlers[IRQ_MAX] = {0};
 
-void x86_64_IRQ_Handler(Registers* regs)
-{
-    int irq = regs->interrupt - PIC_REMAP_OFFSET;
-    
-    // Bounds check
-    if (irq < 0 || irq >= 16) {
-        log_warn(MODULE, "Invalid IRQ number: %d", irq);
+
+void x86_64_IRQ_Handler(Registers* regs) {
+    int vector = (int)regs->interrupt;
+
+    if (vector < IRQ_VECTOR_BASE || vector >= IRQ_MAX) {
+        log_warn(MODULE, "IRQ_Handler: vector 0x%x out of range", vector);
+        lapic_eoi();
         return;
     }
-    
-    if (g_IRQHandlers[irq] != NULL) {
-        g_IRQHandlers[irq](regs);
+
+    IRQHandler handler = g_IRQHandlers[vector];
+    if (handler != NULL) {
+        handler(regs);
     } else {
-        log_warn(MODULE, "Unhandled IRQ %d...", irq);
+        log_warn(MODULE, "Unhandled vector 0x%x (IRQ %d)",
+                 vector, vector - IRQ_VECTOR_BASE);
     }
-    
-    if (g_Driver != NULL) {
-        g_Driver->SendEndOfInterrupt(irq);
-    }
+
+    lapic_eoi();
 }
 
-void x86_64_IRQ_Initialize()
-{
-    const PICDriver* drivers[] = {
-        i8259_GetDriver(),
-    };
-    
-    for (int i = 0; i < SIZE(drivers); i++) {
-        if (drivers[i]->Probe()) {
-            g_Driver = drivers[i];
-        }
-    }
-    
-    if (g_Driver == NULL) {
-        log_warn(MODULE, "No PIC found!");
+void x86_64_IRQ_Initialize() {
+    // Register our central dispatch for all vectors in our range
+    for (int v = IRQ_VECTOR_BASE; v < IRQ_MAX; v++)
+        x86_64_ISR_RegisterHandler(v, x86_64_IRQ_Handler);
+
+    // Bring up LAPIC and IOAPIC (IOAPIC masks everything on init,
+    // PIC is disabled inside ioapic_init → pic_disable())
+    lapic_init();
+    ioapic_init();
+
+    log_ok(MODULE, "IRQ subsystem ready — IOAPIC+LAPIC backend, "
+                   "%d vectors available", IRQ_MAX - IRQ_VECTOR_BASE);
+}
+
+// Register a handler for ISA IRQ 0-15 (same as before)
+void x86_64_IRQ_RegisterHandler(int irq, IRQHandler handler) {
+    if (irq < 0 || irq >= 16) {
+        log_warn(MODULE, "RegisterHandler: IRQ %d out of ISA range", irq);
         return;
     }
-    
-    log_info(MODULE, "Found %s PIC.", g_Driver->Name);
-    g_Driver->Initialize(PIC_REMAP_OFFSET, PIC_REMAP_OFFSET + 8, false);
-    
-    // Register ISR handlers
-    for (int i = 0; i < 16; i++)
-        x86_64_ISR_RegisterHandler(PIC_REMAP_OFFSET + i, x86_64_IRQ_Handler);
-    
-    // DON'T enable interrupts here - let drivers do it when ready
-    // DON'T unmask IRQs here - let each driver unmask its own IRQ
+    g_IRQHandlers[IRQ_VECTOR_BASE + irq] = handler;
 }
 
-void x86_64_IRQ_RegisterHandler(int irq, IRQHandler handler)
-{
-    g_IRQHandlers[irq] = handler;
-}
-
+// Unmask an ISA IRQ — routes it through IOAPIC for the first time,
+// or just unmasks it if already routed.
 void x86_64_IRQ_Unmask(int irq) {
-    if (g_Driver != NULL) {
-        g_Driver->Unmask(irq);
+    if (irq < 0 || irq >= 16) {
+        log_warn(MODULE, "Unmask: IRQ %d out of ISA range", irq);
+        return;
     }
+    uint8_t vector = (uint8_t)(IRQ_VECTOR_BASE + irq);
+    // ioapic_route_isa_irq applies MADT overrides automatically
+    ioapic_route_isa_irq((uint8_t)irq, vector, lapic_id());
+}
+
+void x86_64_IRQ_RegisterGSI(uint32_t gsi, uint8_t vector, IRQHandler handler) {
+    if (vector < IRQ_VECTOR_BASE || vector >= IRQ_MAX) {
+        log_warn(MODULE, "RegisterGSI: vector 0x%x out of range", vector);
+        return;
+    }
+    g_IRQHandlers[vector] = handler;
+    // Route immediately — PCI is edge-triggered active-low by default,
+    // adjust flags if your device needs level-triggered
+    ioapic_route(gsi, vector, IOAPIC_DELIV_FIXED,
+                 /*active_low=*/1, /*level_triggered=*/0, lapic_id());
+    log_info(MODULE, "GSI %u → vector 0x%x registered", gsi, vector);
+}
+
+void x86_64_IRQ_MaskGSI(uint32_t gsi) {
+    ioapic_mask_gsi(gsi);
+}
+
+void x86_64_IRQ_UnmaskGSI(uint32_t gsi) {
+    ioapic_unmask_gsi(gsi);
+}
+
+void x86_64_IRQ_EOI(void) {
+    lapic_eoi();
 }

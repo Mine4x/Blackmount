@@ -1,6 +1,6 @@
 qemu-system-x86_64 \
   -machine q35 \
-  -cpu max \
+  -cpu qemu64,+x2apic \
   -m 512M \
   -smp 4 \
   -debugcon stdio \
