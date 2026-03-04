@@ -52,4 +52,9 @@ syscall_handler_asm:
     pop r11
     pop rcx
 
-    sysretq
+    push 0x23
+    push rsp
+    push r11
+    push 0x1B
+    push rcx
+    iretq
