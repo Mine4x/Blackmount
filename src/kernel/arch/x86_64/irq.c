@@ -91,3 +91,28 @@ void x86_64_IRQ_UnmaskGSI(uint32_t gsi) {
 void x86_64_IRQ_EOI(void) {
     lapic_eoi();
 }
+
+#define VECTOR_ALLOC_BASE   0x30
+#define VECTOR_ALLOC_MAX    0xEF   // leave 0xEF-0xFF for LAPIC timer/spurious/error
+
+static uint8_t g_next_vector = VECTOR_ALLOC_BASE;
+
+uint8_t x86_64_IRQ_AllocVector(void) {
+    if (g_next_vector >= VECTOR_ALLOC_MAX) {
+        log_err(MODULE, "AllocVector: vector space exhausted");
+        return 0;
+    }
+    return g_next_vector++;
+}
+
+void x86_64_IRQ_RegisterVector(uint8_t vector, IRQHandler handler) {
+    if (vector < VECTOR_ALLOC_BASE || vector >= IRQ_MAX) {
+        log_warn(MODULE, "RegisterVector: vector 0x%x out of range", vector);
+        return;
+    }
+    g_IRQHandlers[vector] = handler;
+}
+
+uint8_t get_next_vector(void) {
+    return g_next_vector;
+}
