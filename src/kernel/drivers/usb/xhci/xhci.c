@@ -8,6 +8,8 @@
 #include <timer/timer.h>
 #include <heap.h>
 #include "xhci_rings.h"
+#include <memory.h>
+#include <util/vector.h>
 
 void* xhc_block;
 pci_device_t* xhc_dev;
@@ -41,6 +43,144 @@ uint32_t m_extended_capabilities_offset;
 uint64_t* m_dcbaa;
 uint64_t* m_dcbaa_virt;
 
+volatile uint8_t m_command_irq_completed;
+
+vector m_command_completion_events;
+
+int xhci_init_device() {
+    log_info(XHCI_MOD, "xHCI init!");
+
+    pci_device_t* hc = get_hc();
+    if (!hc) {
+        return -1;
+    }
+    xhc_dev = hc;
+
+    pci_map_bar(xhc_dev, 0);
+    pci_bar_t bar = xhc_dev->bars[0];
+    xhc_base = bar.virt_base;
+
+    log_debug(XHCI_MOD, "xHCI vadrr : %0x%llx", xhc_base);
+    log_debug(XHCI_MOD, "xHCI padrr : %0x%llx", xhci_get_physical_addr((void*)xhc_base));
+
+    _parse_capability_registers();
+    _log_capability_registers();
+
+    if (_reset_host_controller() < 0) {
+        log_err(XHCI_MOD, "Unable to reset host controller");
+        return -2;
+    }
+    _configure_operational_registers();
+    _log_operational_registers();
+
+    _configure_runtime_registers();
+
+    pci_enable_intx(xhc_dev, _xhci_irq_handler);
+
+    vector_init(&m_command_completion_events, sizeof(xhci_command_completion_trb_t*));
+
+    return 0;
+}
+
+int xhci_start_device() {
+    _log_usbsts();
+
+    if (_start_host_controller() < 0) {
+        return -1;
+    }
+
+    log_ok(XHCI_MOD, "Controller Started!");
+
+    xhci_trb_t trb;
+    memset(&trb, 0, sizeof(trb));
+    trb.trb_type = XHCI_TRB_TYPE_ENABLE_SLOT_CMD;
+
+    for (int i = 0; i < XHCI_MAX_DEVICE_SLOTS(m_cap_regs); i++) {
+        xhci_command_completion_trb_t* completion_trb = _send_command_trb(&trb, 200);
+    if (completion_trb) {
+        log_debug(XHCI_MOD, "Completion TRB\ncompletion code:0x%x\nslot_id:%d", completion_trb->completion_code, completion_trb->slot_id);
+    }
+    }
+
+    _log_usbsts();
+
+    return 0;
+}
+
+int xhci_stop_device() {
+    vector_free(&m_command_completion_events);
+
+    return 0;
+}
+
+static void _process_events(void) {
+    xhci_trb_t* events[32];
+    size_t event_count;
+
+    if (xhci_event_ring_has_unprocessed_events()) {
+        xhci_event_ring_dequeue_events(events, &event_count, 32);
+    }
+
+    uint8_t command_completion_status = 0;
+
+    for (size_t i = 0; i < event_count; i++) {
+        xhci_trb_t* trb = events[i];
+        switch (trb->trb_type) {
+        case XHCI_TRB_TYPE_CMD_COMPLETION_EVENT: {
+            command_completion_status = 1;
+            xhci_command_completion_trb_t* c = (xhci_command_completion_trb_t*)trb;
+            vector_push(&m_command_completion_events, &c);
+            break;
+        }
+        default: {
+            break;
+        }
+        }
+    }
+    
+    m_command_irq_completed = command_completion_status;
+}
+
+// Timeout should be 200!
+static xhci_command_completion_trb_t* _send_command_trb(xhci_trb_t* cmd_trb, uint32_t timeout_ms) {
+    xhci_command_ring_enqueue(cmd_trb);
+
+    xhci_doorbell_manager_ring_command_doorbell();
+
+    uint64_t sleep_passed = 0;
+    while (!m_command_irq_completed) {
+        timer_sleep_us(10);
+        sleep_passed += 10;
+        if (sleep_passed > timeout_ms * 1000) {
+            log_warn(XHCI_MOD, "Timeout waiting on command completion");
+            break;
+        }
+    }
+    
+    // Assumes only one command being send at a time.
+    xhci_command_completion_trb_t* completion_trb =
+    m_command_completion_events.size
+        ? *(xhci_command_completion_trb_t**)vector_get(&m_command_completion_events, 0)
+        : NULL;
+    
+    vector_get(&m_command_completion_events, 0);
+    
+    vector_clear(&m_command_completion_events);
+    m_command_irq_completed = 0;
+
+    if (!completion_trb) {
+        log_err(XHCI_MOD, "Failed to find completion TRB for command %d", cmd_trb->trb_type);
+        return NULL;
+    }
+
+    if (completion_trb->completion_code != XHCI_TRB_COMPLETION_CODE_SUCCESS) {
+        log_err(XHCI_MOD, "Command TRB failed with error: %s", trb_completion_code_to_string(completion_trb->completion_code));
+        return NULL;
+    }
+
+    return completion_trb;
+}
+
 static void _parse_capability_registers() {
     m_cap_regs = (volatile xhci_capability_registers_t*)xhc_base;
 
@@ -65,6 +205,8 @@ static void _parse_capability_registers() {
     m_op_regs = (volatile xhci_operational_registers_t*)((uintptr_t)xhc_base + m_capability_regs_length);
 
     m_runtime_regs = (volatile xhci_runtime_registers_t*)(xhc_base + m_cap_regs->rtsoff);
+
+    xhci_doorbell_manager_init(xhc_base+m_cap_regs->dboff);
 }
 
 static void _log_capability_registers() {
@@ -255,6 +397,12 @@ static void _acknowledge_irq(uint8_t interrupter) {
     interrupter_regs->iman = iman;
 }
 
+static void _xhci_irq_handler() {
+    _process_events();
+
+    _acknowledge_irq(0);
+}
+
 static void _configure_runtime_registers() {
     m_op_regs->usbsts = XHCI_USBSTS_EINT;
     
@@ -273,51 +421,3 @@ static void _configure_runtime_registers() {
     _acknowledge_irq(0);
 }
 
-int xhci_init_device() {
-    log_info(XHCI_MOD, "xHCI init!");
-
-    pci_device_t* hc = get_hc();
-    if (!hc) {
-        return -1;
-    }
-    xhc_dev = hc;
-
-    pci_map_bar(xhc_dev, 0);
-    pci_bar_t bar = xhc_dev->bars[0];
-    xhc_base = bar.virt_base;
-
-    log_debug(XHCI_MOD, "xHCI vadrr : %0x%llx", xhc_base);
-    log_debug(XHCI_MOD, "xHCI padrr : %0x%llx", xhci_get_physical_addr((void*)xhc_base));
-
-    _parse_capability_registers();
-    _log_capability_registers();
-
-    if (_reset_host_controller() < 0) {
-        log_err(XHCI_MOD, "Unable to reset host controller");
-        return -2;
-    }
-    _configure_operational_registers();
-    _log_operational_registers();
-
-    _configure_runtime_registers();
-
-    return 0;
-}
-
-int xhci_start_device() {
-    _log_usbsts();
-
-    if (_start_host_controller() < 0) {
-        return -1;
-    }
-
-    log_ok(XHCI_MOD, "Controller Started!");
-
-    _log_usbsts();
-
-    return 0;
-}
-
-int xhci_stop_device() {
-    return 0;
-}

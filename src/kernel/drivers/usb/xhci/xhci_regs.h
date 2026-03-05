@@ -68,4 +68,24 @@ typedef struct {
     xhci_interrupter_registers_t ir[1024];      // Interrupter Register Sets (offset 0020h to 8000h)
 } xhci_runtime_registers_t;
 
+typedef struct {
+    union {
+        struct {
+            uint8_t     db_target;
+            uint8_t     rsvd;
+            uint16_t    db_stream_id;
+        };
+
+        uint32_t raw;
+    };
+} __attribute__((packed)) xhci_doorbell_register_t;
+
+void xhci_doorbell_manager_init(uintptr_t base);
+
+void xhci_doorbell_manager_ring_doorbell(uint8_t doorbell, uint8_t target);
+
+void xhci_doorbell_manager_ring_command_doorbell();
+void xhci_doorbell_manager_ring_control_endpoint_doorbell(uint8_t doorbell);
+
+
 #endif // XHCI_REGS_H

@@ -90,6 +90,7 @@ void kmain(void)
     log_ok("Boot", "Initialized pci");
     ok("Initialized PCI");
 
+    x86_64_EnableInterrupts();
     int response = xhci_init_device();
     if (response == 0) {
         log_ok("Boot", "Initialized xHCI");
@@ -106,6 +107,7 @@ void kmain(void)
         log_err("Boot", "xHCI init exited with error: %d", response);
         fail("Unable to initialize xHCI");
     }
+    x86_64_DisableInterrupts();
 
     loadConfig();
     log_ok("Boot", "Loaded Kernel Config");

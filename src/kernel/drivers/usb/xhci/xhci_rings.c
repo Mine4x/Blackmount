@@ -165,6 +165,30 @@ void xhci_event_ring_init(size_t max_trbs, volatile xhci_interrupter_registers_t
     e_interrupter_regs->erstba = xhci_get_physical_addr(e_seg_table);
 }
 
+void xhci_event_ring_dequeue_events(xhci_trb_t** buffer, size_t* count, size_t max_count) {
+    *count = 0;
+
+    while (xhci_event_ring_has_unprocessed_events()) {
+        if (*count >= max_count) {
+            break;
+        }
+
+        xhci_trb_t* trb = _dequeue_trb();
+        if (!trb) {
+            break;
+        }
+
+        buffer[*count] = trb;
+        (*count)++;
+    }
+
+    _update_erdp();
+
+    uint64_t erdp = e_interrupter_regs->erdp;
+    erdp |= XHCI_ERDP_EHB;
+    e_interrupter_regs->erdp = erdp;
+}
+
 xhci_trb_t* xhci_event_ring_get_virtual_base() {
     return e_trbs;
 }

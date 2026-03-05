@@ -33,6 +33,8 @@ uintptr_t xhci_event_ring_get_physical_base();
 
 uint8_t xhci_event_ring_get_cycle_bit();
 
+void xhci_event_ring_dequeue_events(xhci_trb_t** buffer, size_t* count, size_t max_count);
+
 int xhci_event_ring_has_unprocessed_events();
 void xhci_event_ring_dequeue(xhci_trb_t** buffer, size_t* count, size_t max_count);
 void xhci_event_ring_flush();
