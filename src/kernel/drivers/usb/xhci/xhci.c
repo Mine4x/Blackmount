@@ -10,6 +10,7 @@
 #include "xhci_rings.h"
 #include <memory.h>
 #include <util/vector.h>
+#include "xhci_ext_cap.h"
 
 void* xhc_block;
 pci_device_t* xhc_dev;
@@ -46,6 +47,9 @@ uint64_t* m_dcbaa_virt;
 volatile uint8_t m_command_irq_completed;
 
 vector m_command_completion_events;
+vector m_usb3_ports;
+
+xhci_extended_capability_t m_extended_cap_head;
 
 int xhci_init_device() {
     log_info(XHCI_MOD, "xHCI init!");
@@ -66,6 +70,18 @@ int xhci_init_device() {
     _parse_capability_registers();
     _log_capability_registers();
 
+    vector_init(&m_usb3_ports, sizeof(uint8_t*));
+    _parse_extended_capabilites();
+
+    log_debug(XHCI_MOD, "XECP: %x", XHCI_XECP(m_cap_regs));
+    log_debug(XHCI_MOD, "Extended Cap Ptr: %llx", xhc_base + m_extended_capabilities_offset);
+
+    uint32_t* cap = (uint32_t*)(xhc_base + m_extended_capabilities_offset);
+
+    for (int i = 0; i < 10; i++) {
+        log_debug(XHCI_MOD, "EXT CAP %d : %x", i, cap[i]);
+    }
+
     if (_reset_host_controller() < 0) {
         log_err(XHCI_MOD, "Unable to reset host controller");
         return -2;
@@ -75,9 +91,8 @@ int xhci_init_device() {
 
     _configure_runtime_registers();
 
-    pci_enable_intx(xhc_dev, _xhci_irq_handler);
-
     vector_init(&m_command_completion_events, sizeof(xhci_command_completion_trb_t*));
+    pci_enable_intx(xhc_dev, _xhci_irq_handler);
 
     return 0;
 }
@@ -95,11 +110,8 @@ int xhci_start_device() {
     memset(&trb, 0, sizeof(trb));
     trb.trb_type = XHCI_TRB_TYPE_ENABLE_SLOT_CMD;
 
-    for (int i = 0; i < XHCI_MAX_DEVICE_SLOTS(m_cap_regs); i++) {
-        xhci_command_completion_trb_t* completion_trb = _send_command_trb(&trb, 200);
-    if (completion_trb) {
-        log_debug(XHCI_MOD, "Completion TRB\ncompletion code:0x%x\nslot_id:%d", completion_trb->completion_code, completion_trb->slot_id);
-    }
+    for (uint8_t port = 0; port < m_max_ports; port++) {
+        log_debug(XHCI_MOD, "Port %d is USB%d", port, _is_usb3_port(port) ? 3 : 2);
     }
 
     _log_usbsts();
@@ -109,8 +121,47 @@ int xhci_start_device() {
 
 int xhci_stop_device() {
     vector_free(&m_command_completion_events);
+    vector_free(&m_usb3_ports);
 
     return 0;
+}
+
+static void _parse_extended_capabilites(void)
+{
+    volatile uint32_t* head_cap_ptr = (volatile uint32_t*)(xhc_base + m_extended_capabilities_offset);
+    xhci_extended_capability_init(&m_extended_cap_head, xhc_base, head_cap_ptr);
+
+    xhci_extended_capability_t* node = &m_extended_cap_head;
+
+    while (node)
+    {
+        if (xhci_extended_capability_id(node) == XHCI_EXT_CAP_SUPPORTED_PROTOCOL) {
+            xhci_usb_supported_protocol_capability_t cap;
+
+            xhci_usb_supported_protocol_capability_init(
+                &cap,
+                node->m_base
+            );
+
+            log_debug(XHCI_MOD, "USB Protocol Cap: major=%d minor=%d ports=%d-%d",
+                      cap.major_revision_version,
+                      cap.minor_revision_version,
+                      cap.compatible_port_offset,
+                      cap.compatible_port_offset + cap.compatible_port_count - 1);
+            
+            uint8_t first_port = cap.compatible_port_offset - 1;
+            uint8_t last_port = first_port + cap.compatible_port_count - 1;
+
+            if (cap.major_revision_version == 3) {
+                for (uint8_t port = first_port; port <= last_port; port++) {
+                    uint8_t p = port;
+                    vector_push(&m_usb3_ports, &p);
+                }
+            }
+        }
+
+        node = xhci_extended_capability_next(node);
+    }
 }
 
 static void _process_events(void) {
@@ -421,3 +472,15 @@ static void _configure_runtime_registers() {
     _acknowledge_irq(0);
 }
 
+static bool _is_usb3_port(uint8_t port_num)
+{
+    for (size_t i = 0; i < m_usb3_ports.size; i++) {
+        uint8_t port = *(uint8_t*)vector_get(&m_usb3_ports, i);
+
+        if (port == port_num) {
+            return true;
+        }
+    }
+
+    return false;
+}

@@ -87,5 +87,74 @@ void xhci_doorbell_manager_ring_doorbell(uint8_t doorbell, uint8_t target);
 void xhci_doorbell_manager_ring_command_doorbell();
 void xhci_doorbell_manager_ring_control_endpoint_doorbell(uint8_t doorbell);
 
+#include <stdint.h>
+
+typedef struct xhci_extended_capability_entry {
+    union {
+        struct {
+            uint8_t id;
+            uint8_t next;
+
+            uint16_t cap_specific;
+        };
+
+        uint32_t raw;
+    };
+} xhci_extended_capability_entry_t;
+_Static_assert(sizeof(xhci_extended_capability_entry_t) == 4,
+               "xhci_extended_capability_entry_t must be 4 bytes");
+
+#define XHCI_NEXT_EXT_CAP_PTR(ptr, next) (volatile uint32_t*)((char*)ptr + (next * sizeof(uint32_t)))
+
+typedef enum {
+    XHCI_EXT_CAP_RESERVED                           = 0,
+    XHCI_EXT_CAP_USB_LEGACY_SUPPORT                 = 1,
+    XHCI_EXT_CAP_SUPPORTED_PROTOCOL                 = 2,
+    XHCI_EXT_CAP_EXTENDED_POWER_MANAGEMENT          = 3,
+    XHCI_EXT_CAP_IOVIRTUALIZATION_SUPPORT           = 4,
+    XHCI_EXT_CAP_MESSAGE_INTERRUPT_SUPPORT          = 5,
+    XHCI_EXT_CAP_LOCAL_MEMORY_SUPPORT               = 6,
+    XHCI_EXT_CAP_USB_DEBUG_CAPABILITY_SUPPORT       = 10,
+    XHCI_EXT_CAP_EXTENDED_MESSAGE_INTERRUPT_SUPPORT = 17
+} xhci_extended_capability_code_t;
+
+
+typedef struct xhci_extended_capability xhci_extended_capability_t;
+
+struct xhci_extended_capability {
+    volatile uint32_t* m_base;
+    xhci_extended_capability_entry_t m_entry;
+
+    xhci_extended_capability_t* m_next;
+};
+
+void xhci_extended_capability_init(
+    xhci_extended_capability_t* cap,
+    volatile uint32_t* xhc_base,
+    volatile uint32_t* cap_ptr
+);
+
+static inline volatile uint32_t*
+xhci_extended_capability_base(const xhci_extended_capability_t* cap)
+{
+    return cap->m_base;
+}
+
+static inline xhci_extended_capability_code_t
+xhci_extended_capability_id(const xhci_extended_capability_t* cap)
+{
+    return (xhci_extended_capability_code_t)cap->m_entry.id;
+}
+
+static inline xhci_extended_capability_t*
+xhci_extended_capability_next(const xhci_extended_capability_t* cap)
+{
+    return cap->m_next;
+}
+
+void xhci_extended_capability_read_next_ext_caps(
+    xhci_extended_capability_t* cap
+);
+
 
 #endif // XHCI_REGS_H
