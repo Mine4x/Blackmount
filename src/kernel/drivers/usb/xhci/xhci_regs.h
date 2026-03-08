@@ -104,6 +104,109 @@ typedef struct xhci_extended_capability_entry {
 _Static_assert(sizeof(xhci_extended_capability_entry_t) == 4,
                "xhci_extended_capability_entry_t must be 4 bytes");
 
+typedef struct xhci_portsc_register {
+    union {
+        struct {
+            // Current connect status (RO), if PP is 0, this bit is also 0
+            uint32_t    ccs         : 1;
+
+            // Port Enable/Disable (R/WC), if PP is 0, this bit is also 0
+            uint32_t    ped         : 1;
+
+            // Reserved and zeroed
+            uint32_t    rsvd0       : 1;
+            
+            // Over-current active (RO)
+            uint32_t    oca         : 1;
+
+            // Port reset (R/W), if PP is 0, this bit is also 0
+            uint32_t    pr          : 1;
+
+            // Port link state (R/W), if PP is 0, this bit is also 0
+            uint32_t    pls         : 4;
+
+            // Port power (R/W)
+            uint32_t    pp          : 1;
+
+            // Port speed (RO)
+            uint32_t    port_speed  : 4;
+
+            // Port indicator control (R/W), if PP is 0, this bit is also 0
+            uint32_t    pic         : 2;
+
+            // Port link state write strobe (R/W), if PP is 0, this bit is also 0
+            uint32_t    lws         : 1;
+
+            // Connect status change (R/WC), if PP is 0, this bit is also 0.
+            // ** When transitioning from 0 to a 1, will trigger a Port Status Change Event.
+            // ** Clear this bit by writing a '1' to it.
+            uint32_t    csc         : 1;
+
+            /*
+            Port enable/disable change (R/WC), if PP is 0, this bit is also 0.
+            ** When transitioning from 0 to a 1, will trigger a Port Status Change Event.
+            ** For a USB2 protocol port, this bit shall be set to ‘1’ only when the port is disabled (EOF2)
+            ** For a USB3 protocol port, this bit shall never be set to ‘1’
+            ** Software shall clear this bit by writing a ‘1’ to it. Refer to section 4.19.2
+            */
+            uint32_t    pec         : 1;
+
+            // Warm port reset change (R/WC), if PP is 0, this bit is also 0.
+            // ** When transitioning from 0 to a 1, will trigger a Port Status Change Event.
+            // ** Reserved and zeroed on USB2 ports.
+            // ** Software shall clear this bit by writing a '1' to it.
+            uint32_t    wrc         : 1;
+
+            // Over-current change (R/WC), if PP is 0, this bit is also 0.
+            // ** When transitioning from 0 to a 1, will trigger a Port Status Change Event.
+            // ** Software shall clear this bit by writing a '1' to it.
+            uint32_t    occ         : 1;
+
+            // Port reset change (R/WC), if PP is 0, this bit is also 0.
+            // ** When transitioning from 0 to a 1, will trigger a Port Status Change Event.
+            // ** Software shall clear this bit by writing a '1' to it.
+            uint32_t    prc         : 1;
+
+            // Port link state change (R/WC), if PP is 0, this bit is also 0.
+            // ** When transitioning from 0 to a 1, will trigger a Port Status Change Event.
+            uint32_t    plc         : 1;
+
+            // Port config error change (R/WC), if PP is 0, this bit is also 0.
+            // ** When transitioning from 0 to a 1, will trigger a Port Status Change Event.
+            // ** Reserved and zeroed on USB2 ports.
+            // ** Software shall clear this bit by writing a '1' to it.
+            uint32_t    cec         : 1;
+
+            // Cold attach status (R/O), if PP is 0, this bit is also 0.
+            uint32_t    cas         : 1;
+
+            // Wake on connect enable (R/W)
+            uint32_t    wce         : 1;
+
+            // Wake on disconnect enable (R/W)
+            uint32_t    wde         : 1;
+
+            // Wake on over-current enable (R/W)
+            uint32_t    woe         : 1;
+
+            // Reserved and zeroed
+            uint32_t    rsvd1        : 2;
+
+            // Device removable (RO)
+            uint32_t    dr          : 1;
+
+            // Warm port reset (R/WC).
+            // ** Reserved and zeroed on USB2 ports.
+            uint32_t    wpr         : 1;
+        } __attribute__((packed));
+
+        // Must be accessed using 32-bit dwords
+        uint32_t raw;
+    };
+} __attribute__((packed)) xhci_portsc_register_t;
+_Static_assert(sizeof(xhci_portsc_register_t) == sizeof(uint32_t),
+               "xhci_portsc_register must be 4 bytes");;
+
 #define XHCI_NEXT_EXT_CAP_PTR(ptr, next) (volatile uint32_t*)((char*)ptr + (next * sizeof(uint32_t)))
 
 typedef enum {

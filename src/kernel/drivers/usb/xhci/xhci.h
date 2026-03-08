@@ -2,6 +2,7 @@
 #define XHCI_H
 #include <drivers/pci/pci.h>
 #include "xhci_trb.h"
+#include "xhci_regs.h"
 
 #define XHCI_MOD "xHCI"
 
@@ -21,6 +22,10 @@ static void _process_events(void);
 static void _parse_extended_capabilites();
 static bool _is_usb3_port(uint8_t port_num);
 static xhci_command_completion_trb_t* _send_command_trb(xhci_trb_t* cmd_trb, uint32_t timeout_ms);
+static xhci_portsc_register_t _read_portsc_reg(uint8_t port);
+static void _write_portsc_reg(xhci_portsc_register_t reg, uint8_t port);
+static int _reset_port(uint8_t port);
+static const char* _usb_speed_to_string(uint8_t speed);
 
 int xhci_init_device();
 int xhci_start_device();

@@ -111,7 +111,17 @@ int xhci_start_device() {
     trb.trb_type = XHCI_TRB_TYPE_ENABLE_SLOT_CMD;
 
     for (uint8_t port = 0; port < m_max_ports; port++) {
-        log_debug(XHCI_MOD, "Port %d is USB%d", port, _is_usb3_port(port) ? 3 : 2);
+        xhci_portsc_register_t portsc = _read_portsc_reg(port);
+
+        if (portsc.csc && portsc.ccs) {
+            int reset_response = _reset_port(port);
+
+            if (reset_response == 0) {
+                log_debug(XHCI_MOD, "Device connected on port %d - %s", port, _usb_speed_to_string(portsc.port_speed));
+            } else {
+                log_err(XHCI_MOD, "Failed to reset port %d after device detection", port);
+            }
+        }
     }
 
     _log_usbsts();
@@ -483,4 +493,99 @@ static bool _is_usb3_port(uint8_t port_num)
     }
 
     return false;
+}
+
+static xhci_portsc_register_t _read_portsc_reg(uint8_t port) {
+    uint64_t reg_base = (uint64_t)m_op_regs + (0x400 + (0x10 * port));
+
+    xhci_portsc_register_t reg;
+    reg.raw = *(volatile uint32_t*)reg_base;
+
+    return reg;
+}
+
+static void _write_portsc_reg(xhci_portsc_register_t reg, uint8_t port) {
+    uint64_t reg_base = (uint64_t)m_op_regs + (0x400 + (0x10 * port));
+    *(volatile uint32_t*)reg_base = reg.raw;
+}
+
+static int _reset_port(uint8_t port) {
+    xhci_portsc_register_t portsc = _read_portsc_reg(port);
+
+    bool is_usb3_port = _is_usb3_port(port);
+
+    if (portsc.pp == 0) {
+        portsc.pp = 1;
+        _write_portsc_reg(portsc, port);
+        timer_sleep_ms(20);
+        portsc = _read_portsc_reg(port);
+
+        if (portsc.pp == 0) {
+            log_err(XHCI_MOD, "Failed to power port: %d", port);
+            return -1;
+        }
+    }
+
+    portsc.csc = 1;
+    portsc.pec = 1;
+    portsc.prc = 1;
+    _write_portsc_reg(portsc, port);
+
+    if (is_usb3_port) {
+        portsc.wpr = 1;
+    } else {
+        portsc.pr = 1;
+    }
+    _write_portsc_reg(portsc, port);
+
+    int timeout = 100;
+    while (timeout > 0)
+    {
+        portsc = _read_portsc_reg(port);
+
+        if ((is_usb3_port && portsc.wrc) || (!is_usb3_port && portsc.prc)) {
+            break;
+        }
+
+        timeout--;
+        timer_sleep_ms(1);
+    }
+
+    if (timeout == 0) {
+        log_err(XHCI_MOD, "Port %d reset timed out", port);
+        return -1;
+    }
+    
+    timer_sleep_ms(3);
+
+    portsc.prc = 1;
+    portsc.wrc = 1;
+    portsc.csc = 1;
+    portsc.pec = 1;
+    portsc.ped = 0;
+    _write_portsc_reg(portsc, port);\
+
+    timer_sleep_ms(3);
+
+    portsc = _read_portsc_reg(port);
+
+    if (portsc.ped == 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static const char* _usb_speed_to_string(uint8_t speed) {
+    static const char* speed_string[7] = {
+        "Invalid",
+        "Full Speed (12 MB/s - USB2.0)",
+        "Low Speed (1.5 Mb/s - USB 2.0)",
+        "High Speed (480 Mb/s - USB 2.0)",
+        "Super Speed (5 Gb/s - USB3.0)",
+        "Super Speed Plus (10 Gb/s - USB 3.1)",
+        "Undefined"
+    };
+
+    return speed_string[speed];
 }
