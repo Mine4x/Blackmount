@@ -10,7 +10,7 @@ typedef struct {
     size_t elem_size;
 } vector;
 
-void vector_init(vector *v, size_t elem_size)
+static inline void vector_init(vector *v, size_t elem_size)
 {
     v->data = NULL;
     v->size = 0;
@@ -18,7 +18,7 @@ void vector_init(vector *v, size_t elem_size)
     v->elem_size = elem_size;
 }
 
-void vector_reserve(vector *v, size_t capacity)
+static inline void vector_reserve(vector *v, size_t capacity)
 {
     if (capacity <= v->capacity) return;
 
@@ -33,7 +33,7 @@ void vector_reserve(vector *v, size_t capacity)
     v->capacity = capacity;
 }
 
-void vector_push(vector *v, void *elem)
+static inline void vector_push(vector *v, void *elem)
 {
     if (v->size >= v->capacity) {
         size_t new_cap = v->capacity ? v->capacity * 2 : 4;
@@ -45,23 +45,23 @@ void vector_push(vector *v, void *elem)
     v->size++;
 }
 
-void *vector_get(vector *v, size_t index)
+static inline void *vector_get(vector *v, size_t index)
 {
     return (char*)v->data + (index * v->elem_size);
 }
 
-void vector_pop(vector *v)
+static inline void vector_pop(vector *v)
 {
     if (v->size)
         v->size--;
 }
 
-void vector_clear(vector *v)
+static inline void vector_clear(vector *v)
 {
     v->size = 0;
 }
 
-void vector_free(vector *v)
+static inline void vector_free(vector *v)
 {
     if (v->data)
         kfree(v->data);

@@ -78,9 +78,9 @@ void kmain(void)
     log_ok("boot", "Initialized DMA Allocator");
     ok("Initialized DMA Allocator");
 
-    timer_init();
-    log_ok("Boot", "Initialized timer");
-    ok("Initialized PIT");
+    //timer_init();
+    //log_ok("Boot", "Initialized timer");
+    //ok("Initialized PIT");
 
     acpi_init();
     log_ok("Boot", "Initialized acpi");
@@ -117,9 +117,9 @@ void kmain(void)
     log_ok("Boot", "Initialized VFS");
     ok("Initialized VFS");
 
-    drivers_init();
-    log_ok("Boot", "Initialized initial drivers");
-    ok("Initialized initial drivers");
+    //drivers_init();
+    //log_ok("Boot", "Initialized initial drivers");
+    //ok("Initialized initial drivers");
 
     proc_init();
     log_ok("Boot", "Initialized Multitasking");
