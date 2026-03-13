@@ -55,30 +55,22 @@ static void hid_keyboard_loop() {
         uint16_t key = hid_keyboard_read_key();
         if (key == HID_SPECIAL_KEY_NONE) return;
 
-        input_keyboard_binding((char)key);
-
-        /*
-        if (key < 0x100) {
-            printf("%c", (char)key);
-        } else {
-            switch (key) {
-            case HID_SPECIAL_KEY_UP:        printf("<UP>");    break;
-            case HID_SPECIAL_KEY_DOWN:      printf("<DOWN>");  break;
-            case HID_SPECIAL_KEY_LEFT:      printf("<LEFT>");  break;
-            case HID_SPECIAL_KEY_RIGHT:     printf("<RIGHT>"); break;
+        switch (key) {
+            case HID_SPECIAL_KEY_UP:        printf("<UP>");    return;
+            case HID_SPECIAL_KEY_DOWN:      printf("<DOWN>");  return;
+            case HID_SPECIAL_KEY_LEFT:      printf("<LEFT>");  return;
+            case HID_SPECIAL_KEY_RIGHT:     printf("<RIGHT>"); return;
             case HID_SPECIAL_KEY_F1 ... HID_SPECIAL_KEY_F12:
-                printf("<F%d>", key - HID_SPECIAL_KEY_F1 + 1); break;
-            case HID_SPECIAL_KEY_HOME:      printf("<HOME>");  break;
-            case HID_SPECIAL_KEY_END:       printf("<END>");   break;
-            case HID_SPECIAL_KEY_PAGE_UP:   printf("<PGUP>");  break;
-            case HID_SPECIAL_KEY_PAGE_DOWN: printf("<PGDN>");  break;
-            case HID_SPECIAL_KEY_INSERT:    printf("<INS>");   break;
-            case HID_SPECIAL_KEY_DELETE:    printf("<DEL>");   break;
-            case HID_SPECIAL_KEY_CAPS_LOCK: printf("<CAPS>");  break;
-            default:                        printf("<0x%04x>", key); break;
-            }
+                printf("<F%d>", key - HID_SPECIAL_KEY_F1 + 1); return;
+            case HID_SPECIAL_KEY_HOME:      printf("<HOME>");  return;
+            case HID_SPECIAL_KEY_END:       printf("<END>");   return;
+            case HID_SPECIAL_KEY_PAGE_UP:   printf("<PGUP>");  return;
+            case HID_SPECIAL_KEY_PAGE_DOWN: printf("<PGDN>");  return;
+            case HID_SPECIAL_KEY_INSERT:    printf("<INS>");   return;
+            case HID_SPECIAL_KEY_DELETE:    printf("<DEL>");   return;
+            case HID_SPECIAL_KEY_CAPS_LOCK: printf("<CAPS>");  return;
+            default:                        input_keyboard_binding((char)key);
         }
-        */
     }
 }
 
