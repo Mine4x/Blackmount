@@ -16,6 +16,7 @@
 #define PAGE_HUGE       (1ULL << 7)
 #define PAGE_GLOBAL     (1ULL << 8)
 #define PAGE_NX         (1ULL << 63)
+#define DEFAULT_PRIV_PAGE_FLAGS (PAGE_PRESENT | PAGE_WRITE)
 
 // Page size
 #define PAGE_SIZE       4096
@@ -71,6 +72,9 @@ void* vmm_get_physical(address_space_t* space, void* virt);
 
 // Check if a virtual address is mapped
 bool vmm_is_mapped(address_space_t* space, void* virt);
+
+// Allocate and map a contiguous range of physical pages
+void* vmm_map_contiguous(address_space_t* space, void* virt, size_t count, uint64_t flags);
 
 // Helper functions for allocating and mapping pages
 void* vmm_alloc_page(address_space_t* space, void* virt, uint64_t flags);

@@ -103,6 +103,31 @@ address_space_t* vmm_get_kernel_space(void) {
     return &kernel_space;
 }
 
+void* vmm_map_contiguous(address_space_t* space, void* virt, size_t count, uint64_t flags) {
+    if (!count || !virt) {
+        return NULL;
+    }
+
+    // Allocate a physically contiguous block of frames
+    void* phys = pmm_alloc_pages(count);
+    if (!phys) {
+        log_err("VMM", "Failed to allocate %zu contiguous physical pages", count);
+        return NULL;
+    }
+
+    // Map virtual -> physical contiguously
+    if (!vmm_map_range(space, virt, phys, count, flags)) {
+        log_err("VMM", "Failed to map contiguous range at 0x%llx", (uint64_t)virt);
+        pmm_free_pages(phys, count);
+        return NULL;
+    }
+
+    log_info("VMM", "Mapped %zu contiguous pages: virt=0x%llx -> phys=0x%llx",
+             count, (uint64_t)virt, (uint64_t)phys);
+
+    return virt;
+}
+
 address_space_t* vmm_create_address_space(void) {
     address_space_t* space = (address_space_t*)PHYS_TO_VIRT(pmm_alloc());
     if (!space) {

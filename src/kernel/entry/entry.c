@@ -21,16 +21,24 @@
 #include <hal/vfs.h>
 #include <drivers/disk/ata.h>
 #include <block/block_image.h>
+#include <drivers/apic/lapic.h>
 #include <drivers/acpi/acpi.h>
 #include <drivers/pci/pci.h>
 #include <panic/panic.h>
+#include <mem/dma.h>
+#include <drivers/usb/xhci/xhci.h>
+#include <drivers/usb/xhci/hid_keyboard.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 
-void ok(const char* string)
+static void ok(const char* string)
 {
     printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
+}
+
+static void fail(const char* string) {
+    printf("[\033[1;31mFAILED\x1b[0m] %s\n", string);
 }
 
 void kmain(void)
@@ -62,17 +70,18 @@ void kmain(void)
 
     HAL_Initialize();
     log_ok("Boot", "Initialized HAL");
-    ok("Initialized HAL/Interrupts");
-
-    x86_64_PageFault_Initialize();
-    log_ok("Boot", "Initialized Pagefault handler");
-    ok("Initialized PageFault Handler");
+    ok("Initialized HAL");
 
     init_heap();
     log_ok("Boot", "Initialized Heap");
     ok("Initialized Heap");
 
+    dma_init();
+    log_ok("boot", "Initialized DMA Allocator");
+    ok("Initialized DMA Allocator");
+
     timer_init();
+    lapic_timer_start(LAPIC_TIMER_PERIODIC, 100);
     log_ok("Boot", "Initialized timer");
     ok("Initialized PIT");
 
@@ -84,6 +93,27 @@ void kmain(void)
     log_ok("Boot", "Initialized pci");
     ok("Initialized PCI");
 
+    hid_keyboard_init(); // Works on some keyboards but not others; Further testing using more keyboard required
+
+    x86_64_EnableInterrupts();
+    int response = xhci_init_device();
+    if (response == 0) {
+        log_ok("Boot", "Initialized xHCI");
+        ok("Initialized xHCI");
+        response = xhci_start_device();
+        if (response == 0) {
+            log_ok("Boot", "Started xHCI");
+            ok("Started xHCI");
+        } else {
+            log_err("Boot", "xHCI init exited with error: %d", response);
+            fail("Unable to start xHCI");
+        }
+    } else {
+        log_err("Boot", "xHCI init exited with error: %d", response);
+        fail("Unable to initialize xHCI");
+    }
+    x86_64_DisableInterrupts();
+
     loadConfig();
     log_ok("Boot", "Loaded Kernel Config");
     ok("Loaded Kernel Config");
@@ -92,13 +122,13 @@ void kmain(void)
     log_ok("Boot", "Initialized VFS");
     ok("Initialized VFS");
 
-    drivers_init();
-    log_ok("Boot", "Initialized initial drivers");
-    ok("Initialized initial drivers");
-
     proc_init();
     log_ok("Boot", "Initialized Multitasking");
     ok("Initialized Multitasking");
+
+    drivers_init();
+    log_ok("Boot", "Initialized initial drivers");
+    ok("Initialized initial drivers");
 
     log_info("Kernel", "Loading syscalls");
     syscalls_init();
@@ -112,7 +142,7 @@ void kmain(void)
     ok("Kernel Started completly");
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
-    
+
     proc_start_scheduling();
 
     halt();

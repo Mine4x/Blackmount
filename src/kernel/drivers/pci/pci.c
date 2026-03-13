@@ -9,9 +9,6 @@
 
 #define PCI_MODULE "PCI"
 
-extern void x86_64_IRQ_RegisterHandler(int irq, IRQHandler handler);
-extern void x86_64_IRQ_Unmask(int irq);
-
 static inline void out32(uint16_t port, uint32_t val) {
     __asm__ volatile ("outl %0, %1" :: "a"(val), "Nd"(port));
 }
@@ -324,25 +321,27 @@ uintptr_t pci_map_bar(pci_device_t *dev, int index)
 
 int pci_enable_intx(pci_device_t *dev, IRQHandler handler)
 {
-    uint8_t irq_line = pci_read_config8(dev, PCI_REG_INTERRUPT_LINE);
     uint8_t irq_pin  = pci_read_config8(dev, PCI_REG_INTERRUPT_PIN);
+    uint8_t irq_line = pci_read_config8(dev, PCI_REG_INTERRUPT_LINE);
 
     if (irq_pin == 0 || irq_line == 0xFF) return -1;
 
-    // Clear INT_DISABLE bit so the device can assert INTx
+    // Clear INT_DISABLE so the device can assert INTx
     uint16_t cmd = pci_get_command(dev);
     cmd &= ~PCI_CMD_INT_DISABLE;
     pci_set_command(dev, cmd);
 
-    // IRQ lines 0–15 are legacy ISA/PIC lines; map to IDT vectors 32–47
-    int vector = irq_line + 32;
+    // Allocate a free IDT vector and route the GSI through the IOAPIC.
+    // x86_64_IRQ_RegisterGSI handles MADT overrides automatically.
+    uint8_t vector = x86_64_IRQ_AllocVector();
+    if (!vector) return -1;
 
-    x86_64_IRQ_RegisterHandler(vector, handler);
-    x86_64_IRQ_Unmask(vector);
+    x86_64_IRQ_RegisterGSI((uint32_t)irq_line, vector, handler);
 
     dev->irq_mode   = PCI_IRQ_INTX;
     dev->irq_vector = vector;
 
+    log_info(PCI_MODULE, "INTx: GSI %u → vector 0x%x", irq_line, vector);
     return vector;
 }
 
@@ -353,38 +352,42 @@ int pci_enable_msi(pci_device_t *dev, int vector, IRQHandler handler)
 
     dev->msi_cap_off = cap;
 
-    uint16_t ctrl = pci_read_config16(dev, cap + 2);
-    bool is_64bit = ctrl & PCI_MSI_CTRL_64BIT;
+    // Allocate a vector if the caller passed 0, otherwise use theirs
+    uint8_t vec = vector ? (uint8_t)vector : x86_64_IRQ_AllocVector();
+    if (!vec) return -1;
+
+    uint16_t ctrl    = pci_read_config16(dev, cap + 2);
+    bool     is_64   = ctrl & PCI_MSI_CTRL_64BIT;
 
     // Disable legacy INTx
     uint16_t cmd = pci_get_command(dev);
     cmd |= PCI_CMD_INT_DISABLE;
     pci_set_command(dev, cmd);
 
-    // MSI message address: 0xFEE[dest:19:12] always targets BSP (APIC id 0)
-    // Message data encodes the vector and edge/assert trigger.
-    uint32_t msg_addr = 0xFEE00000u;   // IA-32 MSI address, APIC ID 0, no re-direction
-    uint16_t msg_data = (uint16_t)(vector & 0xFF);  // edge-triggered, assert
+    // MSI message: target BSP LAPIC (APIC ID 0), edge-triggered
+    uint32_t msg_addr = 0xFEE00000u;
+    uint16_t msg_data = (uint16_t)(vec & 0xFF);
 
     pci_write_config32(dev, cap + 4, msg_addr);
-    if (is_64bit) {
-        pci_write_config32(dev, cap + 8, 0);          // upper address
+    if (is_64) {
+        pci_write_config32(dev, cap + 8,  0);
         pci_write_config16(dev, cap + 12, msg_data);
     } else {
         pci_write_config16(dev, cap + 8, msg_data);
     }
 
-    // Force single-vector, enable MSI
-    ctrl &= ~(0x7u << 4);   // clear MME (multiple message enable)
+    // Single vector, enable MSI
+    ctrl &= ~(0x7u << 4);
     ctrl |= PCI_MSI_CTRL_ENABLE;
     pci_write_config16(dev, cap + 2, ctrl);
 
-    x86_64_IRQ_RegisterHandler(vector, handler);
-    x86_64_IRQ_Unmask(vector);
+    // MSI bypasses the IOAPIC — register directly on the vector
+    x86_64_IRQ_RegisterVector(vec, handler);
 
     dev->irq_mode   = PCI_IRQ_MSI;
-    dev->irq_vector = vector;
+    dev->irq_vector = vec;
 
+    log_info(PCI_MODULE, "MSI: vector 0x%x", vec);
     return 0;
 }
 
@@ -396,49 +399,52 @@ int pci_enable_msix(pci_device_t *dev, int vector_base,
 
     dev->msix_cap_off = cap;
 
-    uint16_t ctrl  = pci_read_config16(dev, cap + 2);
+    uint16_t ctrl     = pci_read_config16(dev, cap + 2);
     uint16_t table_sz = (ctrl & PCI_MSIX_CTRL_TABLE_SZ) + 1;
 
-    if (count > table_sz) count = table_sz;
+    if (count > table_sz)            count = table_sz;
     if (count > PCI_MSIX_MAX_VECTORS) return -1;
 
-    // Locate the MSI-X table: BIR (BAR index) and offset
     uint32_t table_info = pci_read_config32(dev, cap + 4);
     uint8_t  bir        = table_info & 0x7;
     uint32_t table_off  = table_info & ~0x7u;
 
-    // Map the BAR that holds the MSI-X table if not already mapped
-    if (!dev->bars[bir].virt_base) {
+    if (!dev->bars[bir].virt_base)
         if (!pci_map_bar(dev, bir)) return -1;
-    }
 
     volatile uint32_t *msix_table =
         (volatile uint32_t *)(uintptr_t)(dev->bars[bir].virt_base + table_off);
     dev->msix_table      = msix_table;
     dev->msix_table_size = table_sz;
 
-    // Disable all interrupts first, then configure each requested entry
+    // Mask all + enable MSI-X, disable INTx
     ctrl |= PCI_MSIX_CTRL_MASK_ALL | PCI_MSIX_CTRL_ENABLE;
     pci_write_config16(dev, cap + 2, ctrl);
 
     uint16_t cmd = pci_get_command(dev);
-    cmd |= PCI_CMD_INT_DISABLE;   // mask legacy INTx
+    cmd |= PCI_CMD_INT_DISABLE;
     pci_set_command(dev, cmd);
 
     for (uint16_t i = 0; i < count; i++) {
-        int vector = vector_base + i;
+        // Allocate a vector per entry if no base was provided
+        uint8_t vec = vector_base
+                    ? (uint8_t)(vector_base + i)
+                    : x86_64_IRQ_AllocVector();
+        if (!vec) return -1;
+
         uint32_t msg_addr = 0xFEE00000u;
-        uint32_t msg_data = (uint32_t)(vector & 0xFF);
+        uint32_t msg_data = (uint32_t)(vec & 0xFF);
 
-        // Each MSI-X entry is 16 bytes: addr_lo, addr_hi, data, ctrl
-        uint32_t entry_base = i * 4;    // 4 dwords per entry
-        msix_table[entry_base + 0] = msg_addr;
-        msix_table[entry_base + 1] = 0;            // upper address
-        msix_table[entry_base + 2] = msg_data;
-        msix_table[entry_base + 3] &= ~(1u << 0);  // clear per-entry mask bit
+        uint32_t entry = i * 4;
+        msix_table[entry + 0] = msg_addr;
+        msix_table[entry + 1] = 0;
+        msix_table[entry + 2] = msg_data;
+        msix_table[entry + 3] &= ~(1u << 0);  // clear per-entry mask
 
-        x86_64_IRQ_RegisterHandler(vector, handlers[i]);
-        x86_64_IRQ_Unmask(vector);
+        // MSI-X bypasses the IOAPIC — register directly on the vector
+        x86_64_IRQ_RegisterVector(vec, handlers[i]);
+
+        log_info(PCI_MODULE, "MSI-X entry %u → vector 0x%x", i, vec);
     }
 
     // Unmask globally
@@ -446,7 +452,7 @@ int pci_enable_msix(pci_device_t *dev, int vector_base,
     pci_write_config16(dev, cap + 2, ctrl);
 
     dev->irq_mode   = PCI_IRQ_MSIX;
-    dev->irq_vector = vector_base;
+    dev->irq_vector = vector_base ? vector_base : (int)(get_next_vector() - count);
 
     return 0;
 }
@@ -682,7 +688,7 @@ void pci_init(void)
             for (int bus = (int)g_ecam_entries[i].start_bus;
                  bus <= (int)g_ecam_entries[i].end_bus; bus++)
             {
-                log_debug(PCI_MODULE, "  Scanning bus %d ...", bus);
+                //log_debug(PCI_MODULE, "  Scanning bus %d ...", bus);
                 scan_bus(g_ecam_entries[i].segment, (uint8_t)bus);
             }
         }

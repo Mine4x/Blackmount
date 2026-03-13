@@ -1,11 +1,15 @@
 qemu-system-x86_64 \
   -machine q35 \
-  -cpu max \
-  -m 512M \
+  -cpu qemu64,+x2apic \
+  -m 4G \
   -smp 4 \
   -debugcon stdio \
   -cdrom build/nbos.iso \
   -hda build/harddisk.img \
   -boot d \
   -no-reboot \
-  -no-shutdown
+  -no-shutdown \
+  -device qemu-xhci,id=xhci,p3=4,p2=4 \
+  -trace usb_xhci_* -D /tmp/qemu-xhci.log \
+  -device usb-kbd,id=usbkbd \
+  -device usb-host,bus=xhci.0,vendorid=0,productid=0

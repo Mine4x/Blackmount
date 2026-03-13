@@ -12,6 +12,8 @@
 #include <hal/vfs.h>
 #include <panic/panic.h>
 #include <arch/x86_64/io.h>
+#include <drivers/usb/xhci/hid_keyboard.h>
+#include <proc/proc.h>
 
 #define DRIVERS_MODULE "Drivers"
 
@@ -48,16 +50,56 @@ static void input_keyboard_binding(char c)
     }
 }
 
+static void hid_keyboard_loop() {
+    if (hid_keyboard_key_available()) {
+        uint16_t key = hid_keyboard_read_key();
+        if (key == HID_SPECIAL_KEY_NONE) return;
+
+        input_keyboard_binding((char)key);
+
+        /*
+        if (key < 0x100) {
+            printf("%c", (char)key);
+        } else {
+            switch (key) {
+            case HID_SPECIAL_KEY_UP:        printf("<UP>");    break;
+            case HID_SPECIAL_KEY_DOWN:      printf("<DOWN>");  break;
+            case HID_SPECIAL_KEY_LEFT:      printf("<LEFT>");  break;
+            case HID_SPECIAL_KEY_RIGHT:     printf("<RIGHT>"); break;
+            case HID_SPECIAL_KEY_F1 ... HID_SPECIAL_KEY_F12:
+                printf("<F%d>", key - HID_SPECIAL_KEY_F1 + 1); break;
+            case HID_SPECIAL_KEY_HOME:      printf("<HOME>");  break;
+            case HID_SPECIAL_KEY_END:       printf("<END>");   break;
+            case HID_SPECIAL_KEY_PAGE_UP:   printf("<PGUP>");  break;
+            case HID_SPECIAL_KEY_PAGE_DOWN: printf("<PGDN>");  break;
+            case HID_SPECIAL_KEY_INSERT:    printf("<INS>");   break;
+            case HID_SPECIAL_KEY_DELETE:    printf("<DEL>");   break;
+            case HID_SPECIAL_KEY_CAPS_LOCK: printf("<CAPS>");  break;
+            default:                        printf("<0x%04x>", key); break;
+            }
+        }
+        */
+    }
+}
+
+void drivers_loop(void)
+{
+    while (true) {
+        hid_keyboard_loop();
+    }
+}
+
 void drivers_init(void)
 {
-    log_info(DRIVERS_MODULE, "Creating important driver file");
+    //log_info(DRIVERS_MODULE, "Starting Keyboard drivers");
 
-    log_info(DRIVERS_MODULE, "Starting Keyboard drivers");
+    //ps2_keyboard_init();
+    //ps2_keyboard_bind(&input_keyboard_binding);
 
-    ps2_keyboard_init();
-    ps2_keyboard_bind(&input_keyboard_binding);
+    //log_info(DRIVERS_MODULE, "Started Keyboard drivers");
 
-    log_info(DRIVERS_MODULE, "Started Keyboard drivers");
+    void (*ptr)() = &drivers_loop;
+    proc_create_kernel(ptr, 10, 0);
 
     log_info(DRIVERS_MODULE, "Starting Input manager");
 
