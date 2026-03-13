@@ -4,13 +4,16 @@
 #include <debug.h>
 #include <proc/proc.h>
 #include <drivers/disk/floppy.h>
+#include <drivers/driverman.h>
+#include <drivers/apic/lapic.h>
 
 #define PIT_FREQUENCY    1193182
 #define TARGET_FREQUENCY 100
+#define LAPIC_TIMER_VECTOR 0xEF
 
 volatile uint32_t g_pit_ticks = 0;
 
-static void timer_irq_handler(Registers* regs) {
+void timer_irq_handler(Registers* regs) {
     g_pit_ticks++;
 
     proc_update_time(1);
@@ -18,19 +21,22 @@ static void timer_irq_handler(Registers* regs) {
 }
 
 void timer_init() {
-    uint16_t divisor = PIT_FREQUENCY / TARGET_FREQUENCY;
+    //uint16_t divisor = PIT_FREQUENCY / TARGET_FREQUENCY;
 
-    x86_64_outb(0x43, 0x36);
-    x86_64_outb(0x40, divisor & 0xFF);
-    x86_64_outb(0x40, (divisor >> 8) & 0xFF);
+    //x86_64_outb(0x43, 0x36);
+    //x86_64_outb(0x40, divisor & 0xFF);
+    //x86_64_outb(0x40, (divisor >> 8) & 0xFF);
     
-    x86_64_IRQ_RegisterHandler(0, timer_irq_handler);
-    x86_64_IRQ_Unmask(0);
+    //x86_64_IRQ_RegisterHandler(207, timer_irq_handler);
+    //x86_64_IRQ_Unmask(207);
+
+    x86_64_IRQ_RegisterVector(LAPIC_TIMER_VECTOR, timer_irq_handler);
     
     log_ok("TIMER", "PIT initialized at %d Hz", TARGET_FREQUENCY);
 }
 
-uint32_t timer_get_ticks() {
+uint32_t timer_get_ticks() 
+{
     return g_pit_ticks;
 }
 

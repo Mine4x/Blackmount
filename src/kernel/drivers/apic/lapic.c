@@ -1,4 +1,5 @@
 #include "lapic.h"
+#include <arch/x86_64/isr.h>
 #include <timer/timer.h>
 #include <debug.h>
 #include <stdint.h>
@@ -172,6 +173,7 @@ void lapic_send_ipi(uint32_t dest_apic_id, uint8_t vector) {
     log_info("LAPIC", "IPI → APIC %u vector 0x%x", dest_apic_id, vector);
 }
 
-void lapic_timer_handler(void) {
+void lapic_timer_handler(Registers* regs) {
+    timer_irq_handler(regs);
     lapic_eoi();
 }

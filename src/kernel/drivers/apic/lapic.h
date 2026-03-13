@@ -2,6 +2,7 @@
 #define LAPIC_H
 
 #include <stdint.h>
+#include <arch/x86_64/isr.h>
 
 
 #define LAPIC_SPURIOUS_VECTOR   0xFF
@@ -29,6 +30,6 @@ void lapic_timer_stop(void);
 // Send an IPI (fixed delivery, physical destination)
 void lapic_send_ipi(uint32_t dest_apic_id, uint8_t vector);
 
-void lapic_timer_handler(void);
+void lapic_timer_handler(Registers* regs);
 
 #endif
