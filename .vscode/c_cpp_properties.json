@@ -18,6 +18,25 @@
                 "-nostdlib"
             ],
             "configurationProvider": "ms-vscode.makefile-tools"
+        },
+        {
+            "name": "GCC_USER",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/src/apps/libc/include",
+                "${workspaceFolder}/toolchain/x86_64-elf/lib/gcc/x86_64-elf/11.2.0/include"
+            ],
+            "defines": [],
+            "compilerPath": "${workspaceFolder}/toolchain/x86_64-elf/bin/x86_64-elf-gcc",
+            "cStandard": "c99",
+            "cppStandard": "c++14",
+            "intelliSenseMode": "gcc-x86",
+            "compilerArgs": [
+                "-std=c99",
+                "-ffreestanding",
+                "-nostdlib"
+            ],
+            "configurationProvider": "ms-vscode.makefile-tools"
         }
     ],
     "version": 4

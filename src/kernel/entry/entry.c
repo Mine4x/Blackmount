@@ -28,6 +28,7 @@
 #include <mem/dma.h>
 #include <drivers/usb/xhci/xhci.h>
 #include <drivers/usb/xhci/hid_keyboard.h>
+#include <loaders/bin_loader.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -135,6 +136,12 @@ void kmain(void)
     register_syscalls();
     log_ok("Kernel", "Loaded and registerd syscalls");
     ok("Loaded and registerd syscalls");
+
+    int r = bin_load_elf("/bin/hello_world.bin", 10, 0);
+    if (r < 0)
+    {
+        log_err("Kernel", "Failed to load binary: %d", r);
+    }
 
     x86_64_EnableInterrupts();
 

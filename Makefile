@@ -1,8 +1,8 @@
 include build_scripts/config.mk
 
-.PHONY: all kernel clean always tools_fat iso_image harddisk_image
+.PHONY: all kernel clean always tools_fat iso_image harddisk_image apps
 
-all: iso_image tools_fat harddisk_image
+all: apps iso_image tools_fat harddisk_image
 
 include build_scripts/toolchain.mk
 
@@ -46,6 +46,8 @@ $(BUILD_DIR)/harddisk.img: always
 	@sudo mkdir -p /tmp/nbosmnt/dev
 	@sudo cp test.txt /tmp/nbosmnt/test.txt
 	@sudo cp test.txt /tmp/nbosmnt/mydir/test.txt
+	@sudo mkdir -p /tmp/nbosmnt/bin
+	@sudo cp -r $(BUILD_DIR)/apps/*.bin /tmp/nbosmnt/bin/
 	@sudo umount /tmp/nbosmnt
 	@echo "--> Created: $@"
 
@@ -57,6 +59,14 @@ kernel: $(BUILD_DIR)/kernel.bin
 
 $(BUILD_DIR)/kernel.bin: always
 	@$(MAKE) -C src/kernel BUILD_DIR=$(abspath $(BUILD_DIR))
+
+#
+# Apps / Userspace
+#
+apps: $(BUILD_DIR)/apps
+
+$(BUILD_DIR)/apps: always
+	@$(MAKE) -C src/apps BUILD_DIR=$(abspath $(BUILD_DIR))
 
 #
 # Tools
