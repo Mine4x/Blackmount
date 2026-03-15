@@ -46,3 +46,15 @@ uint64_t write(uint64_t fd, const void* buf, size_t count) {
         0                  // arg6 = unused3
     );
 }
+
+uint64_t read(uint64_t fd, void* buf, size_t count) {
+    return syscall6(
+        SYSCALL_READ,      // syscall number for read
+        fd,                // arg1 = file descriptor
+        (uint64_t)buf,     // arg2 = buffer pointer
+        count,             // arg3 = number of bytes to read
+        0,                 // arg4 = unused1
+        0,                 // arg5 = unused2
+        0                  // arg6 = unused3
+    );
+}
