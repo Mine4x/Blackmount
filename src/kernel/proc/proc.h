@@ -31,7 +31,7 @@ int  proc_create_user(void (*entry)(void), void (*end_marker)(void), uint32_t pr
 
 // Mark the current process as exited and switch to the next ready process.
 // Call from a syscall handler (kernel mode). Does not return.
-void proc_exit(void);
+void proc_exit(uint64_t exit_code);
 
 void proc_schedule_interrupt(Registers* frame);
 void proc_update_time(uint32_t ticks);

@@ -221,13 +221,14 @@ int proc_create_user(void (*entry)(void), void (*end_marker)(void), uint32_t pri
 
 // Called from a syscall handler (kernel mode) to exit the current process.
 // Cleans up the PCB and switches directly into the next runnable process.
-void __attribute__((noreturn)) proc_exit(void)
+void __attribute__((noreturn)) proc_exit(uint64_t exit_code)
 {
     if (current_proc < 0)
         goto halt;
-
+    
     int exiting = current_proc;
-    log_info("PROC", "Process PID %d exiting", proc_table[exiting].proc.PID);
+    int pid = proc_table[exiting].proc.PID;
+    log_info("PROC", "Process PID %d exiting", pid);
     proc_table[exiting].state = PROC_ZOMBIE;
 
     int next = -1;
@@ -240,6 +241,9 @@ void __attribute__((noreturn)) proc_exit(void)
     }
 
     memset(&proc_table[exiting], 0, sizeof(PCB));
+
+    log_info("PROC", "Process %d exited with status %d", pid, exit_code);
+    printf("Process %d exited with status %d\n", pid, exit_code);
 
     if (next < 0)
         goto halt;

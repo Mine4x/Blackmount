@@ -1,5 +1,6 @@
 #include <syscalls.h>
 #include <stdint.h>
+#include <stddef.h>
 
 uint64_t syscall6(
     uint64_t number,
@@ -29,12 +30,19 @@ uint64_t syscall6(
     return ret;
 }
 
-void exit(void)
+void exit(int exit_code)
 {
-    __asm__ volatile (
-        "syscall"
-        :
-        : "a"(SYSCALL_EXIT)
-        : "rcx", "r11", "memory"
+    syscall6(SYSCALL_EXIT, (uint64_t)exit_code, 0, 0, 0, 0, 0);
+}
+
+uint64_t write(uint64_t fd, const void* buf, size_t count) {
+    return syscall6(
+        SYSCALL_WRITE,     // syscall number
+        fd,                // arg1 = fd
+        (uint64_t)buf,     // arg2 = buffer pointer
+        count,             // arg3 = number of bytes
+        0,                 // arg4 = unused1
+        0,                 // arg5 = unused2
+        0                  // arg6 = unused3
     );
 }

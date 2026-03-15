@@ -6,7 +6,7 @@ void _start()
 {
     int r = main();
     
-    exit();
+    exit(r);
     
     while (1);
 }

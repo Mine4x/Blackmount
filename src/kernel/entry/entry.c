@@ -142,13 +142,13 @@ void kmain(void)
     {
         log_err("Kernel", "Failed to load binary: %d", r);
     }
-
+    
     x86_64_EnableInterrupts();
 
     log_ok("Kernel", "Initialized all imortant systems");
     ok("Kernel Started completly");
 
-    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
+    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\033[0m\n");
 
     proc_start_scheduling();
 
