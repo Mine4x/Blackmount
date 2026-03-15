@@ -1,5 +1,5 @@
 TARGET_ASMFLAGS += -f elf64
-TARGET_CFLAGS += -ffreestanding -nostdlib -I. -mcmodel=kernel
+TARGET_CFLAGS += -ffreestanding -nostdlib -I. -mcmodel=kernel -mno-red-zone
 TARGET_LIBS += -lgcc
 TARGET_LINKFLAGS += -T linker.ld -nostdlib
 
