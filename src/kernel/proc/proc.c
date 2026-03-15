@@ -4,28 +4,29 @@
 #include <arch/x86_64/gdt.h>
 #include <memory.h>
 #include <mem/vmm.h>
+#include <mem/pmm.h>
 #include <debug.h>
 
 typedef struct {
-    Proc_t proc;
+    Proc_t    proc;
     ProcState state;
     Registers context;
 
     uint8_t  kernel_stack[PROC_STACK_SIZE];
     uint64_t kernel_stack_top;
 
-    uint64_t user_code_base;
-    uint64_t user_stack_base;
-    uint64_t user_stack_top;
+    uint64_t code_vaddr_start;
+    uint64_t code_vaddr_end;
+    uint64_t stack_vaddr_base;
+    uint64_t stack_vaddr_top;
 } PCB;
 
 static PCB      proc_table[MAX_PROCESSES];
-static int      current_proc       = -1;
-static uint32_t next_pid           = 1;
-static int      scheduling_enabled = 0;
+static int      current_proc        = -1;
+static uint32_t next_pid            = 1;
+static int      scheduling_enabled  = 0;
 static uint64_t next_user_code_addr = USER_CODE_BASE;
-
-static int should_save = -1;
+static int      should_save         = -1;
 
 extern void enter_usermode(uint64_t entry, uint64_t stack);
 
@@ -34,50 +35,54 @@ static int proc_find_index(int pid)
     for (int i = 0; i < MAX_PROCESSES; i++)
         if (proc_table[i].proc.PID == pid)
             return i;
-
     return -1;
 }
 
 bool proc_is_blocked(int pid)
 {
     int index = proc_find_index(pid);
-
-    if (index < 0)
-    {
+    if (index < 0) {
         log_err("PROC", "Unable to get index from pid: %d", pid);
-        return;
+        return false;
     }
-
-    if (proc_table[index].state == PROC_BLOCKED)
-        return true;
-    
-    return false;
+    return proc_table[index].state == PROC_BLOCKED;
 }
 
 void proc_block(int pid)
 {
     int index = proc_find_index(pid);
-
-    if (index < 0)
-    {
+    if (index < 0) {
         log_err("PROC", "Unable to get index from pid: %d", pid);
         return;
     }
-
     proc_table[index].state = PROC_BLOCKED;
 }
 
 void proc_unblock(int pid)
 {
     int index = proc_find_index(pid);
-
-    if (index < 0)
-    {
+    if (index < 0) {
         log_err("PROC", "Unable to get index from pid: %d", pid);
         return;
     }
-
     proc_table[index].state = PROC_READY;
+}
+
+bool proc_is_valid_demand_addr(uint64_t vaddr)
+{
+    if (current_proc < 0)
+        return false;
+
+    PCB* pcb = &proc_table[current_proc];
+
+    if (vaddr >= pcb->stack_vaddr_base && vaddr < pcb->stack_vaddr_top)
+        return true;
+
+    uint64_t code_fence = (pcb->code_vaddr_end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    if (vaddr >= pcb->code_vaddr_start && vaddr < code_fence)
+        return true;
+
+    return false;
 }
 
 static void idle(void)
@@ -89,19 +94,17 @@ static void idle(void)
 static int find_next(void)
 {
     int start = current_proc;
-
-    for (int i = 1; i <= MAX_PROCESSES; i++)
-    {
+    for (int i = 1; i <= MAX_PROCESSES; i++) {
         int idx = (start + i) % MAX_PROCESSES;
-
         if (proc_table[idx].state == PROC_READY)
             return idx;
     }
-
     return -1;
 }
 
-static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t parent, ProcType type)
+static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t parent,
+                                ProcType type, uint64_t code_start, uint64_t code_end,
+                                uint64_t stack_base, uint64_t stack_top)
 {
     int slot = -1;
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -110,7 +113,6 @@ static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t pare
             break;
         }
     }
-
     if (slot < 0)
         return -1;
 
@@ -123,36 +125,31 @@ static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t pare
     pcb->proc.Type     = type;
     pcb->state         = PROC_READY;
 
-    uint64_t kernel_stack_top = (uint64_t)(pcb->kernel_stack + PROC_STACK_SIZE);
-    kernel_stack_top &= ~0xFULL;
-    pcb->kernel_stack_top = kernel_stack_top;
+    uint64_t kstack_top = (uint64_t)(pcb->kernel_stack + PROC_STACK_SIZE) & ~0xFULL;
+    pcb->kernel_stack_top = kstack_top;
 
     memset(&pcb->context, 0, sizeof(Registers));
-    pcb->context.rip       = entry;
-    pcb->context.rflags    = 0x202;
+    pcb->context.rip    = entry;
+    pcb->context.rflags = 0x202;
     pcb->context.interrupt = 0;
     pcb->context.error     = 0;
 
     if (type == PROC_TYPE_KERNEL) {
         pcb->context.cs  = x86_64_GDT_CODE_SEGMENT;
         pcb->context.ss  = x86_64_GDT_DATA_SEGMENT;
-        pcb->context.rsp = kernel_stack_top;
-
-        pcb->user_code_base  = 0;
-        pcb->user_stack_base = 0;
-        pcb->user_stack_top  = 0;
-
+        pcb->context.rsp = kstack_top;
+        pcb->code_vaddr_start = 0;
+        pcb->code_vaddr_end   = 0;
+        pcb->stack_vaddr_base = 0;
+        pcb->stack_vaddr_top  = 0;
     } else {
-        pcb->context.cs = x86_64_GDT_USER_CODE_SEGMENT | 3;
-        pcb->context.ss = x86_64_GDT_USER_DATA_SEGMENT | 3;
-
-        pcb->user_code_base  = entry;
-
-        pcb->user_stack_base = USER_STACK_BASE - ((slot + 1) * PROC_STACK_SIZE * 2);
-        pcb->user_stack_top  = pcb->user_stack_base + PROC_STACK_SIZE;
-        pcb->user_stack_top &= ~0xFULL;
-
-        pcb->context.rsp = pcb->user_stack_top;
+        pcb->context.cs  = x86_64_GDT_USER_CODE_SEGMENT | 3;
+        pcb->context.ss  = x86_64_GDT_USER_DATA_SEGMENT | 3;
+        pcb->context.rsp = stack_top;
+        pcb->code_vaddr_start = code_start;
+        pcb->code_vaddr_end   = code_end;
+        pcb->stack_vaddr_base = stack_base;
+        pcb->stack_vaddr_top  = stack_top;
     }
 
     return pcb->proc.PID;
@@ -162,18 +159,16 @@ void proc_yield(void)
 {
     if (!scheduling_enabled || current_proc < 0)
         return;
-    
     should_save = 1;
-
     __asm__ volatile("int $0xEF");
 }
 
-void proc_enter_syscall()
+void proc_enter_syscall(void)
 {
     proc_table[current_proc].proc.Type = PROC_TYPE_KERNEL;
 }
 
-void proc_exit_syscall()
+void proc_exit_syscall(void)
 {
     proc_table[current_proc].proc.Type = PROC_TYPE_USER;
 }
@@ -193,7 +188,6 @@ void proc_start_scheduling(void)
 {
     scheduling_enabled = 1;
 
-    // Prefer entering the first ready user task directly via enter_usermode.
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (proc_table[i].state == PROC_READY &&
             proc_table[i].proc.Type == PROC_TYPE_USER) {
@@ -205,11 +199,9 @@ void proc_start_scheduling(void)
                      proc_table[i].context.rip,
                      proc_table[i].context.rsp);
             enter_usermode(proc_table[i].context.rip, proc_table[i].context.rsp);
-            // does not return
         }
     }
 
-    // No user tasks yet — idle until the timer schedules one.
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (proc_table[i].state == PROC_READY) {
             current_proc = i;
@@ -221,10 +213,12 @@ void proc_start_scheduling(void)
 
 int proc_create_kernel(void (*entry)(void), uint32_t priority, uint32_t parent)
 {
-    return proc_create_internal((uint64_t)entry, priority, parent, PROC_TYPE_KERNEL);
+    return proc_create_internal((uint64_t)entry, priority, parent,
+                                PROC_TYPE_KERNEL, 0, 0, 0, 0);
 }
 
-int proc_create_user(void (*entry)(void), void (*end_marker)(void), uint32_t priority, uint32_t parent)
+int proc_create_user(void (*entry)(void), void (*end_marker)(void),
+                     uint32_t priority, uint32_t parent)
 {
     __asm__ volatile("cli");
 
@@ -236,35 +230,82 @@ int proc_create_user(void (*entry)(void), void (*end_marker)(void), uint32_t pri
 
     size_t code_size = (uint64_t)end_marker - (uint64_t)entry;
 
-    if (code_size == 0 || code_size > 0x10000) {
+    if (code_size == 0 || code_size > (USER_CODE_LIMIT - USER_CODE_BASE)) {
         __asm__ volatile("sti");
-        log_err("PROC", "Invalid user program size: %d bytes", code_size);
+        log_err("PROC", "Invalid user program size: %zu bytes", code_size);
         return -1;
     }
 
-    size_t pages_needed = (code_size + PAGE_SIZE - 1) / PAGE_SIZE;
-    size_t alloc_size   = pages_needed * PAGE_SIZE;
-    uint64_t user_addr  = next_user_code_addr;
+    size_t   pages_needed = (code_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    size_t   alloc_size   = pages_needed * PAGE_SIZE;
+    uint64_t user_code_va = next_user_code_addr;
 
-    if (user_addr + alloc_size >= USER_STACK_BASE) {
+    if (user_code_va + alloc_size >= USER_CODE_LIMIT) {
         __asm__ volatile("sti");
-        log_err("PROC", "Out of user space!");
+        log_err("PROC", "Out of code space!");
         return -1;
     }
 
-    uint64_t safe_addr = user_addr;
-    size_t   safe_size = code_size;
+    address_space_t* kspace = vmm_get_kernel_space();
 
-    __asm__ volatile("sti");
-    log_info("PROC", "Copying %d bytes of user code to 0x%lx", safe_size, safe_addr);
-    __asm__ volatile("cli");
+    for (size_t off = 0; off < alloc_size; off += PAGE_SIZE) {
+        void* mapped = vmm_alloc_page(kspace, (void*)(user_code_va + off), VMM_USER_PAGE);
+        if (!mapped) {
+            __asm__ volatile("sti");
+            log_err("PROC", "Failed to map code page at offset %zu", off);
+            return -1;
+        }
 
-    memcpy((void*)user_addr, (void*)entry, code_size);
+        size_t copy_len = (off < code_size)
+                        ? ((code_size - off < PAGE_SIZE) ? (code_size - off) : PAGE_SIZE)
+                        : 0;
 
-    if (alloc_size > code_size)
-        memset((void*)(user_addr + code_size), 0, alloc_size - code_size);
+        if (copy_len)
+            memcpy((void*)(user_code_va + off), (uint8_t*)entry + off, copy_len);
 
-    int pid = proc_create_internal(user_addr, priority, parent, PROC_TYPE_USER);
+        if (copy_len < PAGE_SIZE)
+            memset((void*)(user_code_va + off + copy_len), 0, PAGE_SIZE - copy_len);
+    }
+
+    int slot = -1;
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (proc_table[i].state == PROC_UNUSED) {
+            slot = i;
+            break;
+        }
+    }
+
+    if (slot < 0) {
+        __asm__ volatile("sti");
+        log_err("PROC", "No free PCB slot!");
+        return -1;
+    }
+
+    uint64_t stack_top  = USER_STACK_ARENA + (uint64_t)(slot + 1) * USER_STACK_VSIZE;
+    uint64_t stack_base = stack_top - USER_STACK_VSIZE;
+
+    if (stack_top > USER_SPACE_END) {
+        __asm__ volatile("sti");
+        log_err("PROC", "Stack region overflows user address space!");
+        return -1;
+    }
+
+    uint64_t initial_stack_page = (stack_top - PAGE_SIZE) & ~((uint64_t)PAGE_SIZE - 1);
+    void* mapped = vmm_alloc_page(kspace, (void*)initial_stack_page, VMM_USER_PAGE);
+    if (!mapped) {
+        __asm__ volatile("sti");
+        log_err("PROC", "Failed to map initial stack page!");
+        return -1;
+    }
+    memset((void*)initial_stack_page, 0, PAGE_SIZE);
+
+    uint64_t initial_rsp = (stack_top - 16) & ~0xFULL;
+
+    int pid = proc_create_internal(
+        user_code_va, priority, parent, PROC_TYPE_USER,
+        user_code_va, user_code_va + code_size,
+        stack_base, initial_rsp
+    );
 
     if (pid < 0) {
         __asm__ volatile("sti");
@@ -272,21 +313,19 @@ int proc_create_user(void (*entry)(void), void (*end_marker)(void), uint32_t pri
         return -1;
     }
 
-    next_user_code_addr = user_addr + alloc_size;
+    next_user_code_addr = user_code_va + alloc_size;
 
     __asm__ volatile("sti");
-    log_ok("PROC", "Created user task PID %d at 0x%lx", pid, safe_addr);
-
+    log_ok("PROC", "Created user task PID %d | code=[0x%lx,0x%lx) stack=[0x%lx,0x%lx)",
+           pid, user_code_va, user_code_va + code_size, stack_base, initial_rsp);
     return pid;
 }
 
-// Called from a syscall handler (kernel mode) to exit the current process.
-// Cleans up the PCB and switches directly into the next runnable process.
 void __attribute__((noreturn)) proc_exit(uint64_t exit_code)
 {
     if (current_proc < 0)
         goto halt;
-    
+
     int exiting = current_proc;
     int pid = proc_table[exiting].proc.PID;
     log_info("PROC", "Process PID %d exiting", pid);
@@ -295,7 +334,8 @@ void __attribute__((noreturn)) proc_exit(uint64_t exit_code)
     int next = -1;
     for (int i = 1; i <= MAX_PROCESSES; i++) {
         int candidate = (exiting + i) % MAX_PROCESSES;
-        if (proc_table[candidate].state == PROC_READY && proc_table[candidate].state != PROC_BLOCKED) {
+        if (proc_table[candidate].state == PROC_READY &&
+            proc_table[candidate].state != PROC_BLOCKED) {
             next = candidate;
             break;
         }
@@ -317,11 +357,9 @@ void __attribute__((noreturn)) proc_exit(uint64_t exit_code)
         enter_usermode(proc_table[next].context.rip, proc_table[next].context.rsp);
     }
 
-    // Kernel task (e.g. idle) — just enable interrupts and hlt loop.
-    // The timer will schedule properly from here.
 halt:
     log_info("PROC", "All user tasks exited, idling");
-    current_proc = next; // may be -1 or idle slot, both are fine
+    current_proc = next;
     __asm__ volatile("sti");
     while (1) __asm__ volatile("hlt");
 
@@ -335,11 +373,9 @@ void proc_schedule_interrupt(Registers* frame)
 
     int old = current_proc;
     if (old >= 0 && proc_table[old].state != PROC_UNUSED) {
-        proc_table[old].context = *frame;            // always save context
-
-        if (proc_table[old].state == PROC_RUNNING)   // only transition running→ready
+        proc_table[old].context = *frame;
+        if (proc_table[old].state == PROC_RUNNING)
             proc_table[old].state = PROC_READY;
-        // if PROC_BLOCKED, leave it — it stays blocked until proc_unblock()
     }
 
     int next = find_next();
@@ -363,6 +399,5 @@ int proc_get_current_pid(void)
 {
     if (current_proc < 0)
         return -1;
-
     return proc_table[current_proc].proc.PID;
 }

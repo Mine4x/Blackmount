@@ -75,7 +75,7 @@ void vmm_init(void) {
     log_ok("VMM", "Virtual memory manager initialized");
     log_info("VMM", "Kernel space PML4: 0x%llx (phys: 0x%llx)", 
              (uint64_t)kernel_space.pml4_virt, (uint64_t)kernel_space.pml4);
-    setup_user_space();
+    //setup_user_space();
 }
 
 void setup_user_space(void) {
