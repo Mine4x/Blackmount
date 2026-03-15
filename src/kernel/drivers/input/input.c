@@ -2,6 +2,9 @@
 #include <stdbool.h>
 #include <heap.h>
 #include <hal/vfs.h>
+#include <util/vector.h>
+#include <proc/proc.h>
+#include <debug.h>
 
 #define INPUT_BUFFER_SIZE 128
 
@@ -12,7 +15,39 @@ typedef struct {
     int fd;
 } InputManager;
 
+typedef struct
+{
+    int pid;
+    void* buffer;
+    size_t buf_size;
+} WaitingProc;
+
+
 static InputManager *input = NULL;
+
+vector waitingProcesses;
+
+void Input_register_proc(int pid, void* buf, size_t buf_size)
+{
+    WaitingProc *wp = kmalloc(sizeof(WaitingProc));
+
+    wp->pid = pid;
+    wp->buffer = buf;
+    wp->buf_size = buf_size;
+
+    vector_push(&waitingProcesses, &wp);
+
+    proc_block(pid);
+}
+
+static bool copy_to_user(void* user_ptr, const void* kernel_src, size_t n)
+{
+    if (!user_ptr)
+        return false;
+
+    memcpy(user_ptr, kernel_src, n);
+    return true;
+}
 
 // Initialize input manager
 bool Input_Init(int file_descriptor)
@@ -37,6 +72,8 @@ bool Input_Init(int file_descriptor)
 
     // Reset file position to start
     VFS_Set_Pos(input->fd, 0, true);
+
+    vector_init(&waitingProcesses, sizeof(WaitingProc*));
 
     return true;
 }
@@ -95,18 +132,36 @@ void Input_Clear(void)
     if (!input)
         return;
 
+    for (int i = 0; i < waitingProcesses.size; i++)
+    {
+        WaitingProc** wp_ptr = vector_get(&waitingProcesses, i);
+        WaitingProc* wp = *wp_ptr;
+
+        if (!wp)
+            continue;
+
+        if (wp->buffer && input) {
+            size_t copy_len = (input->length < wp->buf_size - 1)
+                                ? input->length
+                                : wp->buf_size - 1;
+
+            input->buffer[copy_len] = '\0';
+            copy_to_user(wp->buffer, input->buffer, copy_len + 1);
+        }
+
+        // Unblock BEFORE freeing
+        proc_unblock(wp->pid);
+        kfree(wp);
+    }
+
+    vector_clear(&waitingProcesses);
     input->length = 0;
 
     if (input->fd >= 0) {
-        // Reset file to beginning
         VFS_Set_Pos(input->fd, 0, true);
-
-        // Overwrite entire previous buffer with zeros
         char zero = 0;
         for (size_t i = 0; i < input->capacity; i++)
             VFS_Write(input->fd, 1, &zero, true);
-
-        // Reset back to beginning again
         VFS_Set_Pos(input->fd, 0, true);
     }
 }

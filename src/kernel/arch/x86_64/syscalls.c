@@ -1,6 +1,7 @@
 #include "syscalls.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <proc/proc.h>
 
 #define MSR_EFER    0xC0000080u   /* Extended Feature Enable Register      */
 #define MSR_STAR    0xC0000081u   /* Syscall Target Address (segment bases) */
@@ -61,7 +62,12 @@ uint64_t x86_64_Syscall_Dispatch(uint64_t number,
                                   uint64_t arg4, uint64_t arg5, uint64_t arg6)
 {
     if (number < SYSCALL_MAX_COUNT && g_SyscallHandlers[number] != NULL)
-        return g_SyscallHandlers[number](arg1, arg2, arg3, arg4, arg5, arg6);
+    {
+        proc_enter_syscall();
+        uint64_t r = g_SyscallHandlers[number](arg1, arg2, arg3, arg4, arg5, arg6);
+        proc_exit_syscall();
+        return r;
+    }
     
     return (uint64_t)-1;
 }

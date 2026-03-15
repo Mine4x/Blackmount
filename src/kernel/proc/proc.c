@@ -6,13 +6,6 @@
 #include <mem/vmm.h>
 #include <debug.h>
 
-typedef enum {
-    PROC_UNUSED = 0,
-    PROC_READY,
-    PROC_RUNNING,
-    PROC_ZOMBIE
-} ProcState;
-
 typedef struct {
     Proc_t proc;
     ProcState state;
@@ -32,7 +25,60 @@ static uint32_t next_pid           = 1;
 static int      scheduling_enabled = 0;
 static uint64_t next_user_code_addr = USER_CODE_BASE;
 
+static int should_save = -1;
+
 extern void enter_usermode(uint64_t entry, uint64_t stack);
+
+static int proc_find_index(int pid)
+{
+    for (int i = 0; i < MAX_PROCESSES; i++)
+        if (proc_table[i].proc.PID == pid)
+            return i;
+
+    return -1;
+}
+
+bool proc_is_blocked(int pid)
+{
+    int index = proc_find_index(pid);
+
+    if (index < 0)
+    {
+        log_err("PROC", "Unable to get index from pid: %d", pid);
+        return;
+    }
+
+    if (proc_table[index].state == PROC_BLOCKED)
+        return true;
+    
+    return false;
+}
+
+void proc_block(int pid)
+{
+    int index = proc_find_index(pid);
+
+    if (index < 0)
+    {
+        log_err("PROC", "Unable to get index from pid: %d", pid);
+        return;
+    }
+
+    proc_table[index].state = PROC_BLOCKED;
+}
+
+void proc_unblock(int pid)
+{
+    int index = proc_find_index(pid);
+
+    if (index < 0)
+    {
+        log_err("PROC", "Unable to get index from pid: %d", pid);
+        return;
+    }
+
+    proc_table[index].state = PROC_READY;
+}
 
 static void idle(void)
 {
@@ -42,20 +88,15 @@ static void idle(void)
 
 static int find_next(void)
 {
-    if (current_proc < 0)
-        return -1;
-
     int start = current_proc;
-    int i = (start + 1) % MAX_PROCESSES;
 
-    while (i != start) {
-        if (proc_table[i].state == PROC_READY)
-            return i;
-        i = (i + 1) % MAX_PROCESSES;
+    for (int i = 1; i <= MAX_PROCESSES; i++)
+    {
+        int idx = (start + i) % MAX_PROCESSES;
+
+        if (proc_table[idx].state == PROC_READY)
+            return idx;
     }
-
-    if (proc_table[current_proc].state == PROC_RUNNING)
-        return current_proc;
 
     return -1;
 }
@@ -115,6 +156,26 @@ static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t pare
     }
 
     return pcb->proc.PID;
+}
+
+void proc_yield(void)
+{
+    if (!scheduling_enabled || current_proc < 0)
+        return;
+    
+    should_save = 1;
+
+    __asm__ volatile("int $0xEF");
+}
+
+void proc_enter_syscall()
+{
+    proc_table[current_proc].proc.Type = PROC_TYPE_KERNEL;
+}
+
+void proc_exit_syscall()
+{
+    proc_table[current_proc].proc.Type = PROC_TYPE_USER;
 }
 
 void proc_init(void)
@@ -234,7 +295,7 @@ void __attribute__((noreturn)) proc_exit(uint64_t exit_code)
     int next = -1;
     for (int i = 1; i <= MAX_PROCESSES; i++) {
         int candidate = (exiting + i) % MAX_PROCESSES;
-        if (proc_table[candidate].state == PROC_READY) {
+        if (proc_table[candidate].state == PROC_READY && proc_table[candidate].state != PROC_BLOCKED) {
             next = candidate;
             break;
         }
@@ -273,10 +334,12 @@ void proc_schedule_interrupt(Registers* frame)
         return;
 
     int old = current_proc;
+    if (old >= 0 && proc_table[old].state != PROC_UNUSED) {
+        proc_table[old].context = *frame;            // always save context
 
-    if (old >= 0 && proc_table[old].state == PROC_RUNNING) {
-        proc_table[old].context = *frame;
-        proc_table[old].state   = PROC_READY;
+        if (proc_table[old].state == PROC_RUNNING)   // only transition running→ready
+            proc_table[old].state = PROC_READY;
+        // if PROC_BLOCKED, leave it — it stays blocked until proc_unblock()
     }
 
     int next = find_next();
@@ -285,10 +348,8 @@ void proc_schedule_interrupt(Registers* frame)
 
     current_proc = next;
     proc_table[next].state = PROC_RUNNING;
-
     if (proc_table[next].proc.Type == PROC_TYPE_USER)
         x86_64_TSS_SetKernelStack(proc_table[next].kernel_stack_top);
-
     *frame = proc_table[next].context;
 }
 

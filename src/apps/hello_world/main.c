@@ -4,10 +4,12 @@
 
 int main(void)
 {
-    for (int i = 1; i < 15; i++)
-    {
-        printf("Number %d\n", i);
-    }
+    printf("Give some input: ");
+
+    char buf[104];
+    read(STDIN, buf, sizeof(buf));
+
+    printf("%s\n", buf);
 
     return 0;
 }

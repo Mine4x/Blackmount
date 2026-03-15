@@ -27,3 +27,5 @@ size_t Input_GetBuffer(char *out, size_t out_size);
 
 // Get current buffer length
 size_t Input_get_length(void);
+
+void Input_register_proc(int pid, void* buf, size_t buffer_size);

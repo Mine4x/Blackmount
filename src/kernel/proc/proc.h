@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <arch/x86_64/isr.h>
+#include <stdbool.h>
 
 #define MAX_PROCESSES   64
 #define PROC_STACK_SIZE 8192
@@ -37,5 +38,20 @@ void proc_schedule_interrupt(Registers* frame);
 void proc_update_time(uint32_t ticks);
 
 int  proc_get_current_pid(void);
+
+void proc_block(int pid);
+void proc_unblock(int pid);
+void proc_yield(void);
+void proc_enter_syscall();
+void proc_exit_syscall();
+bool proc_is_blocked(int pid);
+
+typedef enum {
+    PROC_UNUSED = 0,
+    PROC_READY,
+    PROC_RUNNING,
+    PROC_ZOMBIE,
+    PROC_BLOCKED
+} ProcState;
 
 #define USER_PROGRAM_END() void __user_program_end_##__LINE__(void) {}
