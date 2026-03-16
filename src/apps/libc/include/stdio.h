@@ -16,4 +16,6 @@ void print_int(int value);
 void print_hex(unsigned int value);
 void printf(const char* fmt, ...);
 
+void scanf(const char* fmt, ...);
+
 #endif

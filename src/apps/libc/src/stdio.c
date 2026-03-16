@@ -117,3 +117,46 @@ void printf(const char* fmt, ...)
 
     va_end(args);
 }
+
+void scanf(const char* fmt, ...)
+{
+    char buf[104];                   // buffer for input
+    int n = read(STDIN, buf, sizeof(buf) - 1); // read input
+    if (n <= 0) return;
+
+    buf[n] = '\0'; // null-terminate the buffer
+
+    char* p = buf;
+    va_list args;
+    va_start(args, fmt);
+
+    while (*fmt) {
+        if (*fmt == '%') {
+            fmt++;
+            if (*fmt == 'd') {
+                int* iptr = va_arg(args, int*);
+                int value = 0;
+                bool neg = false;
+
+                // skip whitespace
+                while (*p == ' ' || *p == '\n' || *p == '\t') p++;
+
+                if (*p == '-') {
+                    neg = true;
+                    p++;
+                }
+
+                // parse digits
+                while (*p >= '0' && *p <= '9') {
+                    value = value * 10 + (*p - '0');
+                    p++;
+                }
+
+                *iptr = neg ? -value : value;
+            }
+        }
+        fmt++;
+    }
+
+    va_end(args);
+}

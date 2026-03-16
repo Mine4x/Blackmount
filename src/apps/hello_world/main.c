@@ -6,10 +6,11 @@ int main(void)
 {
     printf("Give some input: ");
 
-    char buf[104];
-    read(STDIN, buf, sizeof(buf));
+    int x;
 
-    printf("%s\n", buf);
+    scanf("%d", &x);
+
+    printf("got %d\n", x);
 
     return 0;
 }

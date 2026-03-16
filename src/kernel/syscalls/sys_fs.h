@@ -36,5 +36,10 @@ uint64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
 
     proc_yield();
 
-    return 0;
+    return count;
+}
+
+uint64_t sys_open(uint64_t path)
+{
+    return VFS_Open((const char*)path, false);
 }

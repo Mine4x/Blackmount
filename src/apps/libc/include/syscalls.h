@@ -6,7 +6,9 @@
 
 #define SYSCALL_READ 0
 #define SYSCALL_WRITE 1
+#define SYSCALL_OPEN 2
 #define SYSCALL_EXIT 60
+
 /*
  * Calls a syscall with 6 arguments
  */
@@ -30,8 +32,13 @@ void exit(int exit_code);
 uint64_t write(uint64_t fd, const void* buf, size_t count);
 
 /*
- * Reads something from a file
+ * Reads something from a file into a buffer and returns the bytes read
  */
 uint64_t read(uint64_t fd, void* buf, size_t count);
+
+/*
+ * Opens a file and returns the FD
+ */
+uint64_t open(const char* path);
 
 #endif
