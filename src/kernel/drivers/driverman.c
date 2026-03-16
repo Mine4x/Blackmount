@@ -7,13 +7,13 @@
 #include <drivers/disk/floppy.h>
 #include <config/config.h>
 #include <util/str_to_int.h>
-#include <drivers/input/input.h>
 #include <fb/textrenderer.h>
 #include <hal/vfs.h>
 #include <panic/panic.h>
 #include <arch/x86_64/io.h>
 #include <drivers/usb/xhci/hid_keyboard.h>
 #include <proc/proc.h>
+#include <console/console.h>
 
 #define DRIVERS_MODULE "Drivers"
 
@@ -27,27 +27,22 @@ static void input_keyboard_binding(char c)
 
     if (c == '\b' || c == 127)
     {
-        if (Input_get_length() == 0)
+        if (console_get_length() == 0)
             return;
 
-        Input_RmChar();
-        tr_backspace();
+        console_backspace();
         return;
     }
 
     if (c == '\n')
     {
+        console_clear();
         printf("\n");
-
-        Input_Clear();
 
         return;
     }
 
-    if (Input_AddChar(c))
-    {
-        printf("%c", c);
-    }
+    console_user_put_c(c);
 }
 
 static void hid_keyboard_loop() {
@@ -95,7 +90,7 @@ void drivers_init(void)
 
     log_info(DRIVERS_MODULE, "Starting Input manager");
 
-    if (!Input_Init(VFS_FD_STDIN))
+    if (!console_init())
         panic(DRIVERS_MODULE, "Failed to initialize Input Manager");
 
     log_debug(DRIVERS_MODULE, "Initialized Input Buffer");

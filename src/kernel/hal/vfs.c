@@ -15,6 +15,7 @@
 #include <debug.h>
 #include <panic/panic.h>
 #include <proc/proc.h>
+#include <console/console.h>
 
 block_device_t* rootdrive;
 ext2_fs_t*      rootfs;
@@ -405,7 +406,7 @@ int VFS_Write_old(fd_t file, uint8_t* data, size_t size)
     case VFS_FD_STDOUT:
     case VFS_FD_STDERR:
         for (size_t i = 0; i < size; i++)
-            tr_putc(data[i]);
+            console_putc(data[i]);
         return size;
 
     case VFS_FD_DEBUG:

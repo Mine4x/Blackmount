@@ -1,0 +1,227 @@
+#include "console.h"
+#include <debug.h>
+
+static InputManager *input = NULL;
+
+vector waitingProcesses;
+
+static uint32_t fg_color = 0xFFFFFF;
+static uint32_t bg_color = 0x000000;
+
+static bool c_escape_mode = false;
+static char c_escape_buf[16];
+static int c_escape_pos = 0;
+
+void console_putc(char c)
+{
+    if (c_escape_mode) {
+        if (c_escape_pos < 15) {
+            c_escape_buf[c_escape_pos++] = c;
+        }
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+            handle_escape_sequence();
+        }
+        return;
+    }
+
+    if (c == '\x1b') {
+        c_escape_mode = true;
+        c_escape_pos = 0;
+        return;
+    }
+
+    tr_backspace();
+    tr_putc(c);
+    draw_cursor();
+}
+
+static void draw_cursor(void)
+{
+    tr_putc('_');
+}
+
+static void handle_escape_sequence(void) {
+    c_escape_buf[c_escape_pos] = 0;
+    
+    int fg = -1, bg = -1;
+    if (c_escape_pos >= 2 && c_escape_buf[c_escape_pos - 1] == 'm') {
+        int val = 0;
+        int i = 0;
+        while (c_escape_buf[i]) {
+            char c = c_escape_buf[i];
+            if (c >= '0' && c <= '9') {
+                val = val * 10 + (c - '0');
+            } else if (c == ';' || c == 'm') {
+                switch (val) {
+                    case 0: fg = 0xFFFFFF; bg = 0x000000; break; // reset
+                    case 30: fg = 0x000000; break; // black
+                    case 31: fg = 0xFF0000; break; // red
+                    case 32: fg = 0x00FF00; break; // green
+                    case 33: fg = 0xFFFF00; break; // yellow
+                    case 34: fg = 0x0000FF; break; // blue
+                    case 35: fg = 0xFF00FF; break; // magenta
+                    case 36: fg = 0x00FFFF; break; // cyan
+                    case 37: fg = 0xFFFFFF; break; // white
+                    case 40: bg = 0x000000; break; // black bg
+                    case 41: bg = 0xFF0000; break; // red bg
+                    case 42: bg = 0x00FF00; break; // green bg
+                    case 43: bg = 0xFFFF00; break; // yellow bg
+                    case 44: bg = 0x0000FF; break; // blue bg
+                    case 45: bg = 0xFF00FF; break; // magenta bg
+                    case 46: bg = 0x00FFFF; break; // cyan bg
+                    case 47: bg = 0xFFFFFF; break; // white bg
+                    default: break;
+                }
+                val = 0;
+            }
+            i++;
+        }
+    }
+    
+    if (fg != -1 || bg != -1)
+        tr_set_color(fg != -1 ? fg : fg_color, bg != -1 ? bg : bg_color);
+    
+    c_escape_mode = false;
+    c_escape_pos = 0;
+}
+
+void console_register_proc(int pid, void* buf, size_t buf_size)
+{
+    WaitingProc *wp = kmalloc(sizeof(WaitingProc));
+
+    wp->pid = pid;
+    wp->buffer = buf;
+    wp->buf_size = buf_size;
+
+    vector_push(&waitingProcesses, &wp);
+
+    proc_block(pid);
+}
+
+static bool copy_to_user(void* user_ptr, const void* kernel_src, size_t n)
+{
+    if (!user_ptr)
+        return false;
+
+    memcpy(user_ptr, kernel_src, n);
+    return true;
+}
+
+void console_user_put_c(char c)
+{
+    if (!console_addchar(c))
+    {
+        log_err(CONSOLE_MODULE, "Unable to add char to buffer");
+        return;
+    }
+    tr_backspace();
+    tr_putc(c);
+    draw_cursor();
+}
+
+void console_backspace()
+{
+    if (!console_rmchar())
+    {
+        log_err(CONSOLE_MODULE, "Unable to remove char from buffer");
+        return;
+    }
+
+    tr_backspace();
+    tr_backspace();
+    draw_cursor();
+}
+
+bool console_init()
+{
+    if (input != NULL)
+        return false;
+
+    input = kmalloc(sizeof(InputManager));
+    if (!input)
+        return false;
+
+    input->buffer = kmalloc(CONSOLE_BUFFER_SIZE);
+    if (!input->buffer) {
+        kfree(input);
+        input = NULL;
+        return false;
+    }
+
+    input->length = 0;
+    input->capacity = CONSOLE_BUFFER_SIZE;
+
+    vector_init(&waitingProcesses, sizeof(WaitingProc*));
+
+    return true;
+}
+
+void console_free(void)
+{
+    if (!input)
+        return;
+
+    console_clear(); 
+
+    kfree(input->buffer);
+    kfree(input);
+    input = NULL;
+}
+
+bool console_addchar(char c)
+{
+    if (!input || input->length >= input->capacity)
+        return false;
+
+    input->buffer[input->length++] = c;
+
+    return true;
+}
+
+bool console_rmchar(void)
+{
+    if (!input || input->length == 0)
+        return false;
+
+    input->length--;
+
+    return true;
+}
+
+void console_clear(void)
+{
+    if (!input)
+        return;
+
+    for (int i = 0; i < waitingProcesses.size; i++)
+    {
+        WaitingProc** wp_ptr = vector_get(&waitingProcesses, i);
+        WaitingProc* wp = *wp_ptr;
+
+        if (!wp)
+            continue;
+
+        if (wp->buffer && input) {
+            size_t copy_len = (input->length < wp->buf_size - 1)
+                                ? input->length
+                                : wp->buf_size - 1;
+
+            input->buffer[copy_len] = '\0';
+            copy_to_user(wp->buffer, input->buffer, copy_len + 1);
+        }
+
+        proc_unblock(wp->pid);
+        kfree(wp);
+    }
+
+    vector_clear(&waitingProcesses);
+    input->length = 0;
+}
+
+size_t console_get_length(void)
+{
+    if (!input)
+        return -1;
+
+    return input->length;
+}
