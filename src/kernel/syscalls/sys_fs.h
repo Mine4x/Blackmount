@@ -43,3 +43,8 @@ uint64_t sys_open(uint64_t path)
 {
     return VFS_Open((const char*)path, false);
 }
+
+uint64_t sys_close(uint64_t fd)
+{
+    return VFS_Close(fd, false);
+}

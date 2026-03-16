@@ -120,11 +120,11 @@ void printf(const char* fmt, ...)
 
 void scanf(const char* fmt, ...)
 {
-    char buf[104];                   // buffer for input
-    int n = read(STDIN, buf, sizeof(buf) - 1); // read input
+    char buf[104];                   
+    int n = read(STDIN, buf, sizeof(buf) - 1);
     if (n <= 0) return;
 
-    buf[n] = '\0'; // null-terminate the buffer
+    buf[n] = '\0';
 
     char* p = buf;
     va_list args;
@@ -133,12 +133,12 @@ void scanf(const char* fmt, ...)
     while (*fmt) {
         if (*fmt == '%') {
             fmt++;
+
             if (*fmt == 'd') {
                 int* iptr = va_arg(args, int*);
                 int value = 0;
                 bool neg = false;
 
-                // skip whitespace
                 while (*p == ' ' || *p == '\n' || *p == '\t') p++;
 
                 if (*p == '-') {
@@ -146,13 +146,26 @@ void scanf(const char* fmt, ...)
                     p++;
                 }
 
-                // parse digits
                 while (*p >= '0' && *p <= '9') {
                     value = value * 10 + (*p - '0');
                     p++;
                 }
 
                 *iptr = neg ? -value : value;
+            }
+
+            else if (*fmt == 's') {
+                char* str = va_arg(args, char*);
+
+                // skip whitespace
+                while (*p == ' ' || *p == '\n' || *p == '\t') p++;
+
+                // copy characters until whitespace
+                while (*p && *p != ' ' && *p != '\n' && *p != '\t') {
+                    *str++ = *p++;
+                }
+
+                *str = '\0'; // terminate string
             }
         }
         fmt++;

@@ -47,7 +47,9 @@ $(BUILD_DIR)/harddisk.img: always
 	@sudo cp test.txt /tmp/nbosmnt/test.txt
 	@sudo cp test.txt /tmp/nbosmnt/mydir/test.txt
 	@sudo mkdir -p /tmp/nbosmnt/bin
-	@sudo cp -r $(BUILD_DIR)/apps/*.bin /tmp/nbosmnt/bin/
+	@for f in $(BUILD_DIR)/apps/*.bin; do \
+		sudo cp $$f /tmp/nbosmnt/bin/$$(basename $${f%.bin}); \
+	done
 	@sudo umount /tmp/nbosmnt
 	@echo "--> Created: $@"
 

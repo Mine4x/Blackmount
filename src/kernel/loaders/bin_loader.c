@@ -65,7 +65,7 @@ typedef struct __attribute__((packed)) {
 } Elf64_Phdr;
 
 /* proc_create_user enforces a 0x10000-byte cap on user code size. */
-#define BIN_MAX_IMAGE_SIZE  0x10000u
+#define BIN_MAX_IMAGE_SIZE  0x20000000ULL
 
 /* Guard against malformed headers with absurd segment counts. */
 #define BIN_MAX_PHDRS       64u

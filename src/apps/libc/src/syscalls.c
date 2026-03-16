@@ -73,3 +73,16 @@ uint64_t open(const char* path)
         0               // arg6 = unused5
     );
 }
+
+uint64_t close(uint64_t fd)
+{
+    return syscall6(
+        SYSCALL_CLOSE,
+        fd,
+        0,
+        0,
+        0,
+        0,
+        0
+    );
+}

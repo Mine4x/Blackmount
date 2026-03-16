@@ -7,6 +7,7 @@
 #define SYSCALL_READ 0
 #define SYSCALL_WRITE 1
 #define SYSCALL_OPEN 2
+#define SYSCALL_CLOSE 3
 #define SYSCALL_EXIT 60
 
 /*
@@ -40,5 +41,10 @@ uint64_t read(uint64_t fd, void* buf, size_t count);
  * Opens a file and returns the FD
  */
 uint64_t open(const char* path);
+
+/*
+ * Closes a open file
+ */
+uint64_t close(uint64_t fd);
 
 #endif

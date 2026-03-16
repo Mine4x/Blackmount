@@ -19,12 +19,6 @@
 
 static void input_keyboard_binding(char c)
 {
-    if (c == 'x')
-    {
-        VFS_Unmount();
-        x86_64_outw(0x604, 0x2000); // Does shutdown if running qemu
-    }
-
     if (c == '\b' || c == 127)
     {
         if (console_get_length() == 0)

@@ -137,7 +137,7 @@ void kmain(void)
     log_ok("Kernel", "Loaded and registerd syscalls");
     ok("Loaded and registerd syscalls");
 
-    int r = bin_load_elf("/bin/hello_world.bin", 10, 0);
+    int r = bin_load_elf("/bin/mountshell", 10, 0);
     if (r < 0)
     {
         log_err("Kernel", "Failed to load binary: %d", r);
