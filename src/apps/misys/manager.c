@@ -104,3 +104,13 @@ void manager_free()
 
     service_count = 0;
 }
+
+group* find_group(const char* name)
+{
+    for (int i = 0; i < group_count; i++)
+    {
+        if (strcmp(groups[i]->name, name) == 0)
+            return groups[i];
+    }
+    return NULL;
+}

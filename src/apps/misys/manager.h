@@ -7,8 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "types.h"
+#include <stdio.h>
 
 int manager_init(void);
 int manager_register_group(const char* name);
+
+group* find_group(const char* name);
 
 #endif

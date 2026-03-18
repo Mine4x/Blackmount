@@ -2,6 +2,7 @@
 #include <syscalls.h>
 #include "log.h"
 #include "manager.h"
+#include "parser.h"
 
 int main()
 {
@@ -11,6 +12,11 @@ int main()
         return -1;
     }
     
+    manager_register_group("black");
+
+    parse_respond r = parse_and_register_service("/etc/misys/exampleservice.ini");
+    printf("Registerd service with %d\n", r);
+
     log_ok("Started System completly");
 
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\033[0m\n");
