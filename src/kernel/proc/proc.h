@@ -58,5 +58,7 @@ bool proc_is_blocked(int pid);
 bool proc_is_valid_demand_addr(uint64_t vaddr);
 
 uint64_t proc_wait_pid(uint64_t pid);
+uint64_t proc_brk(uint64_t new_brk);
+int64_t  proc_sbrk(int64_t increment);
 
 #define USER_PROGRAM_END() void __user_program_end_##__LINE__(void) {}

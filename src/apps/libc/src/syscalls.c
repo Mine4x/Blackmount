@@ -112,3 +112,8 @@ uint64_t binrun(const char* path)
         0
     );
 }
+
+uint64_t brk(uint64_t addr)
+{
+    return syscall6(SYSCALL_BRK, addr, 0, 0, 0, 0, 0);
+}
