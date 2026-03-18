@@ -1,16 +1,23 @@
 #ifndef TYPES_H
 #define TYPES_H
 
-typedef struct group
+#include <stddef.h>
+
+typedef struct
 {
-    /* data */
-};
+    char name[124];
+} group;
 
 
-typedef struct service
+typedef struct
 {
-    
-};
+    group* group;
+    const char* name;
+    const char* description;
+    const char* exec;
+    group** after;
+    size_t after_count;
+} service;
 
 
 #endif

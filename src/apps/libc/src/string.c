@@ -33,3 +33,70 @@ void strcat(char* dst, const char* src) {
     // add null terminator
     dst[i + j] = 0;
 }
+
+char* strdup(const char* s)
+{
+    if (!s) return NULL;  // handle NULL input
+
+    size_t len = strlen(s);
+    char* copy = malloc(len + 1); // +1 for null terminator
+    if (!copy) return NULL;       // allocation failed
+
+    strcpy(copy, s);              // copy the string
+    return copy;
+}
+
+size_t strlen(const char* s)
+{
+    size_t len = 0;
+    while (s[len] != '\0')
+        len++;
+    return len;
+}
+
+char* strtok(char* str, const char* delim)
+{
+    static char* next = NULL;
+
+    if (str) next = str;
+    if (!next) return NULL;
+
+    // Skip leading delimiters
+    char* start = next;
+    while (*start && strchr(delim, *start))
+        start++;
+
+    if (*start == '\0')  // no more tokens
+    {
+        next = NULL;
+        return NULL;
+    }
+
+    // Find the end of this token
+    char* end = start;
+    while (*end && !strchr(delim, *end))
+        end++;
+
+    if (*end)
+    {
+        *end = '\0';  // terminate token
+        next = end + 1;
+    }
+    else
+    {
+        next = NULL;  // last token
+    }
+
+    return start;
+}
+
+char* strchr(const char* s, int c)
+{
+    while (*s)
+    {
+        if (*s == (char)c)
+            return (char*)s;
+        s++;
+    }
+    return NULL;
+}
