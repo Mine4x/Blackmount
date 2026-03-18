@@ -13,7 +13,7 @@
 uint64_t load_bin(uint64_t path, uint64_t priority)
 {
     x86_64_DisableInterrupts();
-    int pid = bin_load_elf((const char*)path, (uint32_t)priority, 0);
+    int pid = bin_load_elf((const char*)path, (uint32_t)priority, proc_get_current_pid());
     x86_64_EnableInterrupts();
 }
 

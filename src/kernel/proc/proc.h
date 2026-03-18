@@ -19,6 +19,7 @@ typedef struct {
     uint32_t PPID;
     uint32_t Priority;
     uint64_t CPUTime;
+    uint64_t WaitingFor;
     ProcType Type;
 } Proc_t;
 

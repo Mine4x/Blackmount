@@ -36,7 +36,6 @@ static void binary_check_and_execute(const char* prefix, const char* input)
     close(fd);
 
     syscall6(301, (uint64_t)ipath, (uint64_t)10, 0, 0, 0, 0);
-    exit(0);
 }
 
 int main()

@@ -474,6 +474,37 @@ int proc_create_user_image(const uint8_t *image, size_t image_size,
     return pid;
 }
 
+static void proc_kill_children(uint32_t parent_pid)
+{
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        PCB *child = &proc_table[i];
+
+        if (child->state == PROC_UNUSED || child->state == PROC_ZOMBIE)
+            continue;
+
+        if (child->proc.PPID != parent_pid)
+            continue;
+
+        proc_kill_children(child->proc.PID);
+
+        log_info("PROC", "Killing child PID %d (parent PID %d)",
+                 child->proc.PID, parent_pid);
+
+        if (child->address_space) {
+            vmm_destroy_address_space(child->address_space);
+            child->address_space = NULL;
+        }
+
+        memset(child, 0, offsetof(PCB, kernel_stack));
+        child->state = PROC_UNUSED;
+    }
+}
+
+uint64_t proc_wait_pid(uint64_t pid, uint64_t _status, uint64_t options)
+{
+    
+}
+
 void __attribute__((noreturn)) proc_exit(uint64_t exit_code)
 {
     __asm__ volatile("cli");
@@ -485,6 +516,8 @@ void __attribute__((noreturn)) proc_exit(uint64_t exit_code)
     int pid     = proc_table[exiting].proc.PID;
     log_info("PROC", "Process PID %d exiting", pid);
     proc_table[exiting].state = PROC_ZOMBIE;
+
+    proc_kill_children(pid);
 
     address_space_t *old_space = proc_table[exiting].address_space;
 
