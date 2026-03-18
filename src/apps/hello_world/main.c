@@ -4,13 +4,10 @@
 
 int main(void)
 {
-    printf("Give some input: ");
-
-    int x;
-
-    scanf("%d", &x);
-
-    printf("got %d\n", x);
+    for (int i = 1; i < 11; i++)
+    {
+        printf("Hello, World number %d!\n", i);
+    }
 
     return 0;
 }

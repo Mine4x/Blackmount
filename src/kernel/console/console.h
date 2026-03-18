@@ -25,6 +25,7 @@ typedef struct
     int pid;
     void* buffer;
     size_t buf_size;
+    bool active;
 } WaitingProc;
 
 void console_putc(char c);
@@ -42,5 +43,6 @@ size_t console_get_length(void);
 void console_register_proc(int pid, void* buf, size_t buffer_size);
 void console_backspace();
 void console_user_put_c(char c);
+void console_unregister_proc(int pid);
 
 #endif

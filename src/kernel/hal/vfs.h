@@ -32,7 +32,7 @@ typedef struct {
 #define VFS_FD_STDERR   2
 #define VFS_FD_DEBUG    3
 
-#define MAX_OPEN_FILES 50
+#define MAX_OPEN_FILES 100
 
 int VFS_Create(const char* path, bool isDir);
 int VFS_Open(const char* path, bool privileged);

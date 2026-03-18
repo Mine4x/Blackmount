@@ -18,48 +18,43 @@ static bool check_inbuilt(char* path)
     return false;
 }
 
-static void binary_check_and_execute(char* path, char* input)
+static void binary_check_and_execute(const char* prefix, const char* input)
 {
     char ipath[124];
 
-    strcpy(ipath, path);
+    strcpy(ipath, prefix);
     strcat(ipath, input);
 
-    int fd = open(path);
-    if (fd < 0)
-    {
+    int fd = open(ipath);
+    if (fd < 0) {
+        printf("No such binary: %s\n", ipath);
         return;
     }
 
-    printf("Got binary\n");
+    printf("Got binary with fd: %d\n", fd);
     
-    // TODO: Open binary
-
     close(fd);
+
+    syscall6(301, (uint64_t)ipath, (uint64_t)10, 0, 0, 0, 0);
+    exit(0);
 }
 
 int main()
 {
     bool should_exit = false;
-    bool should_block = false;
 
     printf("Mountshell v0.0.1\nBuild for BlackmountOS\n");
 
     while (!should_exit)
     {
-        if (should_block)
-        {
-            
-        }
-
         print_prefix();
 
         char path[124];
         scanf("%s", path);
 
-        should_exit = check_inbuilt(&path);
+        should_exit = check_inbuilt(path);
 
-        binary_check_and_execute("/bin/", &path);
+        binary_check_and_execute("/bin/", path);
     }
     
 

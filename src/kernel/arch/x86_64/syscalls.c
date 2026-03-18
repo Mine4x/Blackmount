@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <proc/proc.h>
+#include "io.h"
 
 #define MSR_EFER    0xC0000080u   /* Extended Feature Enable Register      */
 #define MSR_STAR    0xC0000081u   /* Syscall Target Address (segment bases) */

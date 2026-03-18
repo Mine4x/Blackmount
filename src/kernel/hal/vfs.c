@@ -115,7 +115,8 @@ int VFS_Open(const char* path, bool privileged)
         if (ramdisk_fs_exists(path) && ramdisk_fs_is_file(path)) {
             for (int i = 0; i < MAX_OPEN_FILES; i++) {
                 if (!open_files[i].exists) {
-                    open_files[i].path      = path;
+                    open_files[i].path      = kmalloc(strlen(path)+1);
+                    strcpy(open_files[i].path, path);
                     open_files[i].exists    = true;
                     open_files[i].disk_type = RAMDISK;
                     open_files[i].file      = NULL;
@@ -156,7 +157,7 @@ int VFS_Open(const char* path, bool privileged)
             }
         }
 
-        return -10;
+        return -1;
     }
 
     if (rootDriveType == DISK) {

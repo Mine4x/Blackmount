@@ -63,11 +63,8 @@ typedef struct __attribute__((packed)) {
     Elf64_Xword p_memsz;   /* Size of segment in memory            */
     Elf64_Xword p_align;   /* Segment alignment                    */
 } Elf64_Phdr;
-
-/* proc_create_user enforces a 0x10000-byte cap on user code size. */
+        
 #define BIN_MAX_IMAGE_SIZE  0x20000000ULL
-
-/* Guard against malformed headers with absurd segment counts. */
 #define BIN_MAX_PHDRS       64u
 
 static int elf_validate(const Elf64_Ehdr *ehdr)
@@ -277,85 +274,15 @@ int bin_load_elf(const char *path, uint32_t priority, uint32_t parent)
                  (ph->p_memsz > ph->p_filesz) ? "  (BSS tail zeroed)" : "");
     }
 
-    uint64_t entry_offset = ehdr.e_entry - load_base;
-
-    if (entry_offset == 0) {
-        log_info("BIN", "Entry at image base (offset 0) — no trampoline needed");
-
-        ret = proc_create_user(
-                (void (*)(void)) flat_img,
-                (void (*)(void))(flat_img + flat_size),
-                priority,
-                parent);
-
-    } else {
-
-#ifdef PROC_CREATE_INTERNAL_EXPOSED
-        extern uint64_t next_user_code_addr;
-
-        size_t pages   = (flat_size + PAGE_SIZE - 1) / PAGE_SIZE;
-        size_t alloc   = pages * PAGE_SIZE;
-        uint64_t uaddr = next_user_code_addr;
-
-        if (uaddr + alloc >= USER_STACK_BASE) {
-            log_err("BIN", "Out of user address space");
-            goto out_img;
-        }
-
-        __asm__ volatile("cli");
-        memcpy((void *)uaddr, flat_img, flat_size);
-        if (alloc > flat_size)
-            memset((void *)(uaddr + flat_size), 0, alloc - flat_size);
-
-        uint64_t real_entry = uaddr + entry_offset;
-        ret = proc_create_internal(real_entry, priority, parent, PROC_TYPE_USER);
-
-        if (ret < 0) {
-            __asm__ volatile("sti");
-            log_err("BIN", "proc_create_internal failed");
-            goto out_img;
-        }
-
-        next_user_code_addr = uaddr + alloc;
-        __asm__ volatile("sti");
-
-#else  // PROC_CREATE_INTERNAL_EXPOSED not defined
-        if (entry_offset < 5) {
-            log_err("BIN", "entry_offset=0x%lx is too small for a 5-byte JMP trampoline",
-                    entry_offset);
-            goto out_img;
-        }
-        if (entry_offset > 0x7FFFFFFFu) {
-            log_err("BIN", "entry_offset=0x%lx exceeds rel32 range — "
-                           "define PROC_CREATE_INTERNAL_EXPOSED for direct-entry support",
-                    entry_offset);
-            goto out_img;
-        }
-
-        uint32_t rel32 = (uint32_t)(entry_offset - 5);
-        flat_img[0] = 0xE9;
-        flat_img[1] = (uint8_t)( rel32        & 0xFFu);
-        flat_img[2] = (uint8_t)((rel32 >>  8) & 0xFFu);
-        flat_img[3] = (uint8_t)((rel32 >> 16) & 0xFFu);
-        flat_img[4] = (uint8_t)((rel32 >> 24) & 0xFFu);
-
-        log_info("BIN", "Patched JMP trampoline at offset 0 -> +0x%lx (rel32=0x%08x)",
-                 entry_offset, rel32);
-
-        ret = proc_create_user(
-                (void (*)(void)) flat_img,
-                (void (*)(void))(flat_img + flat_size),
-                priority,
-                parent);
-
-#endif // PROC_CREATE_INTERNAL_EXPOSED
-    }
+    ret = proc_create_user_image(flat_img, flat_size,
+                                 load_base, ehdr.e_entry,
+                                 priority, parent);
 
     if (ret < 0)
         log_err("BIN", "Failed to create process for '%s'", path);
     else
-        log_ok("BIN", "Launched '%s' -> PID %d  (entry=0x%lx, offset=0x%lx)",
-               path, ret, ehdr.e_entry, entry_offset);
+        log_ok("BIN", "Launched '%s' -> PID %d  (entry=0x%lx, base=0x%lx)",
+               path, ret, ehdr.e_entry, load_base);
 
 out_img:
     kfree(flat_img);

@@ -41,10 +41,10 @@ uint64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
 
 uint64_t sys_open(uint64_t path)
 {
-    return VFS_Open((const char*)path, false);
+    return (uint64_t)VFS_Open((const char*)path, false);
 }
 
 uint64_t sys_close(uint64_t fd)
 {
-    return VFS_Close(fd, false);
+    return (uint64_t)VFS_Close(fd, false);
 }

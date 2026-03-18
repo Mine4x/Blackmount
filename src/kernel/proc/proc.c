@@ -12,6 +12,8 @@ typedef struct {
     ProcState state;
     Registers context;
 
+    address_space_t *address_space;
+
     uint8_t  kernel_stack[PROC_STACK_SIZE];
     uint64_t kernel_stack_top;
 
@@ -26,9 +28,15 @@ static int      current_proc        = -1;
 static uint32_t next_pid            = 1;
 static int      scheduling_enabled  = 0;
 static uint64_t next_user_code_addr = USER_CODE_BASE;
-static int      should_save         = -1;
 
 extern void enter_usermode(uint64_t entry, uint64_t stack);
+
+#define VMM_SCRATCH_VA  ((void *)0xFFFFFFFF80F00000ULL)
+
+static inline address_space_t *pcb_space(const PCB *pcb)
+{
+    return pcb->address_space ? pcb->address_space : vmm_get_kernel_space();
+}
 
 static int proc_find_index(int pid)
 {
@@ -41,30 +49,21 @@ static int proc_find_index(int pid)
 bool proc_is_blocked(int pid)
 {
     int index = proc_find_index(pid);
-    if (index < 0) {
-        log_err("PROC", "Unable to get index from pid: %d", pid);
-        return false;
-    }
+    if (index < 0) { log_err("PROC", "Unable to get index from pid: %d", pid); return false; }
     return proc_table[index].state == PROC_BLOCKED;
 }
 
 void proc_block(int pid)
 {
     int index = proc_find_index(pid);
-    if (index < 0) {
-        log_err("PROC", "Unable to get index from pid: %d", pid);
-        return;
-    }
+    if (index < 0) { log_err("PROC", "Unable to get index from pid: %d", pid); return; }
     proc_table[index].state = PROC_BLOCKED;
 }
 
 void proc_unblock(int pid)
 {
     int index = proc_find_index(pid);
-    if (index < 0) {
-        log_err("PROC", "Unable to get index from pid: %d", pid);
-        return;
-    }
+    if (index < 0) { log_err("PROC", "Unable to get index from pid: %d", pid); return; }
     proc_table[index].state = PROC_READY;
 }
 
@@ -73,7 +72,7 @@ bool proc_is_valid_demand_addr(uint64_t vaddr)
     if (current_proc < 0)
         return false;
 
-    PCB* pcb = &proc_table[current_proc];
+    PCB *pcb = &proc_table[current_proc];
 
     if (vaddr >= pcb->stack_vaddr_base && vaddr < pcb->stack_vaddr_top)
         return true;
@@ -102,21 +101,135 @@ static int find_next(void)
     return -1;
 }
 
-static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t parent,
-                                ProcType type, uint64_t code_start, uint64_t code_end,
-                                uint64_t stack_base, uint64_t stack_top)
+static bool map_user_page(address_space_t *proc_space, uint64_t user_va,
+                           const uint8_t *src, size_t copy_len)
+{
+    address_space_t *kspace = vmm_get_kernel_space();
+
+    void *kptr = vmm_alloc_page(kspace, VMM_SCRATCH_VA, VMM_KERNEL_PAGE);
+    if (!kptr) {
+        log_err("PROC", "map_user_page: scratch alloc failed (user_va=0x%lx)", user_va);
+        return false;
+    }
+
+    if (copy_len > 0 && src)
+        memcpy(kptr, src, copy_len);
+    if (copy_len < PAGE_SIZE)
+        memset((uint8_t *)kptr + copy_len, 0, PAGE_SIZE - copy_len);
+
+    void *phys = vmm_get_physical(kspace, VMM_SCRATCH_VA);
+    vmm_unmap(kspace, VMM_SCRATCH_VA);
+    vmm_invlpg(VMM_SCRATCH_VA);
+
+    if (!vmm_map(proc_space, (void *)user_va, phys, VMM_USER_PAGE)) {
+        log_err("PROC", "map_user_page: vmm_map failed (user_va=0x%lx)", user_va);
+        return false;
+    }
+
+    return true;
+}
+
+bool proc_write_to_user(int pid, void *user_dst, const void *src, size_t n)
+{
+    if (!user_dst || !src || n == 0)
+        return false;
+
+    int idx = proc_find_index(pid);
+    if (idx < 0) {
+        log_err("PROC", "proc_write_to_user: unknown pid %d", pid);
+        return false;
+    }
+
+    address_space_t *proc_space = proc_table[idx].address_space;
+    if (!proc_space) {
+        memcpy(user_dst, src, n);
+        return true;
+    }
+
+    address_space_t *kspace    = vmm_get_kernel_space();
+    const uint8_t   *ksrc      = (const uint8_t *)src;
+    uint8_t         *udst      = (uint8_t *)user_dst;
+    size_t           remaining = n;
+
+    while (remaining > 0) {
+        size_t page_off    = (uintptr_t)udst & (PAGE_SIZE - 1);
+        size_t chunk       = PAGE_SIZE - page_off;
+        if (chunk > remaining)
+            chunk = remaining;
+
+        void *page_va = (void *)((uintptr_t)udst & ~(uintptr_t)(PAGE_SIZE - 1));
+
+        void *phys = vmm_get_physical(proc_space, page_va);
+        if (!phys) {
+            log_err("PROC",
+                    "proc_write_to_user: pid %d VA 0x%lx not mapped",
+                    pid, (uint64_t)page_va);
+            return false;
+        }
+
+        if (!vmm_map(kspace, VMM_SCRATCH_VA, phys, VMM_KERNEL_PAGE)) {
+            log_err("PROC", "proc_write_to_user: scratch map failed");
+            return false;
+        }
+
+        memcpy((uint8_t *)VMM_SCRATCH_VA + page_off, ksrc, chunk);
+
+        vmm_unmap(kspace, VMM_SCRATCH_VA);
+        vmm_invlpg(VMM_SCRATCH_VA);
+
+        ksrc      += chunk;
+        udst      += chunk;
+        remaining -= chunk;
+    }
+
+    return true;
+}
+
+static int user_map_stack(address_space_t *proc_space,
+                           uint64_t *out_stack_top,
+                           uint64_t *out_stack_base,
+                           uint64_t *out_initial_rsp)
 {
     int slot = -1;
     for (int i = 0; i < MAX_PROCESSES; i++) {
-        if (proc_table[i].state == PROC_UNUSED) {
-            slot = i;
-            break;
-        }
+        if (proc_table[i].state == PROC_UNUSED) { slot = i; break; }
+    }
+    if (slot < 0) { log_err("PROC", "No free PCB slot!"); return -1; }
+
+    uint64_t stack_top  = USER_STACK_ARENA + (uint64_t)(slot + 1) * USER_STACK_VSIZE;
+    uint64_t stack_base = stack_top - USER_STACK_VSIZE;
+
+    if (stack_top > USER_SPACE_END) {
+        log_err("PROC", "Stack region overflows user address space!");
+        return -1;
+    }
+
+    uint64_t initial_stack_page = (stack_top - PAGE_SIZE) & ~((uint64_t)PAGE_SIZE - 1);
+
+    if (!map_user_page(proc_space, initial_stack_page, NULL, 0)) {
+        log_err("PROC", "Failed to map initial stack page!");
+        return -1;
+    }
+
+    *out_stack_top   = stack_top;
+    *out_stack_base  = stack_base;
+    *out_initial_rsp = (stack_top - 16) & ~0xFULL;
+    return slot;
+}
+
+static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t parent,
+                                ProcType type, uint64_t code_start, uint64_t code_end,
+                                uint64_t stack_base, uint64_t stack_top,
+                                uint64_t initial_rsp, address_space_t *address_space)
+{
+    int slot = -1;
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (proc_table[i].state == PROC_UNUSED) { slot = i; break; }
     }
     if (slot < 0)
         return -1;
 
-    PCB* pcb = &proc_table[slot];
+    PCB *pcb = &proc_table[slot];
     memset(pcb, 0, sizeof(PCB));
 
     pcb->proc.PID      = next_pid++;
@@ -124,13 +237,14 @@ static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t pare
     pcb->proc.Priority = priority;
     pcb->proc.Type     = type;
     pcb->state         = PROC_READY;
+    pcb->address_space = address_space;
 
     uint64_t kstack_top = (uint64_t)(pcb->kernel_stack + PROC_STACK_SIZE) & ~0xFULL;
     pcb->kernel_stack_top = kstack_top;
 
     memset(&pcb->context, 0, sizeof(Registers));
-    pcb->context.rip    = entry;
-    pcb->context.rflags = 0x202;
+    pcb->context.rip       = entry;
+    pcb->context.rflags    = 0x202;
     pcb->context.interrupt = 0;
     pcb->context.error     = 0;
 
@@ -138,14 +252,12 @@ static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t pare
         pcb->context.cs  = x86_64_GDT_CODE_SEGMENT;
         pcb->context.ss  = x86_64_GDT_DATA_SEGMENT;
         pcb->context.rsp = kstack_top;
-        pcb->code_vaddr_start = 0;
-        pcb->code_vaddr_end   = 0;
-        pcb->stack_vaddr_base = 0;
-        pcb->stack_vaddr_top  = 0;
+        pcb->code_vaddr_start = 0; pcb->code_vaddr_end  = 0;
+        pcb->stack_vaddr_base = 0; pcb->stack_vaddr_top = 0;
     } else {
         pcb->context.cs  = x86_64_GDT_USER_CODE_SEGMENT | 3;
         pcb->context.ss  = x86_64_GDT_USER_DATA_SEGMENT | 3;
-        pcb->context.rsp = stack_top;
+        pcb->context.rsp      = initial_rsp;
         pcb->code_vaddr_start = code_start;
         pcb->code_vaddr_end   = code_end;
         pcb->stack_vaddr_base = stack_base;
@@ -159,19 +271,11 @@ void proc_yield(void)
 {
     if (!scheduling_enabled || current_proc < 0)
         return;
-    should_save = 1;
     __asm__ volatile("int $0xEF");
 }
 
-void proc_enter_syscall(void)
-{
-    proc_table[current_proc].proc.Type = PROC_TYPE_KERNEL;
-}
-
-void proc_exit_syscall(void)
-{
-    proc_table[current_proc].proc.Type = PROC_TYPE_USER;
-}
+void proc_enter_syscall(void) { proc_table[current_proc].proc.Type = PROC_TYPE_KERNEL; }
+void proc_exit_syscall(void)  { proc_table[current_proc].proc.Type = PROC_TYPE_USER;   }
 
 void proc_init(void)
 {
@@ -180,7 +284,6 @@ void proc_init(void)
     next_pid            = 1;
     scheduling_enabled  = 0;
     next_user_code_addr = USER_CODE_BASE;
-
     proc_create_kernel(idle, 0, 0);
 }
 
@@ -194,11 +297,13 @@ void proc_start_scheduling(void)
             current_proc = i;
             proc_table[i].state = PROC_RUNNING;
             x86_64_TSS_SetKernelStack(proc_table[i].kernel_stack_top);
+            vmm_switch_space(pcb_space(&proc_table[i]));
             log_info("PROC", "Starting user task PID %d rip=0x%lx rsp=0x%lx",
                      proc_table[i].proc.PID,
                      proc_table[i].context.rip,
                      proc_table[i].context.rsp);
             enter_usermode(proc_table[i].context.rip, proc_table[i].context.rsp);
+            return;
         }
     }
 
@@ -214,7 +319,7 @@ void proc_start_scheduling(void)
 int proc_create_kernel(void (*entry)(void), uint32_t priority, uint32_t parent)
 {
     return proc_create_internal((uint64_t)entry, priority, parent,
-                                PROC_TYPE_KERNEL, 0, 0, 0, 0);
+                                PROC_TYPE_KERNEL, 0, 0, 0, 0, 0, NULL);
 }
 
 int proc_create_user(void (*entry)(void), void (*end_marker)(void),
@@ -228,7 +333,7 @@ int proc_create_user(void (*entry)(void), void (*end_marker)(void),
         return -1;
     }
 
-    size_t code_size = (uint64_t)end_marker - (uint64_t)entry;
+    size_t code_size  = (uint64_t)end_marker - (uint64_t)entry;
 
     if (code_size == 0 || code_size > (USER_CODE_LIMIT - USER_CODE_BASE)) {
         __asm__ volatile("sti");
@@ -236,76 +341,42 @@ int proc_create_user(void (*entry)(void), void (*end_marker)(void),
         return -1;
     }
 
-    size_t   pages_needed = (code_size + PAGE_SIZE - 1) / PAGE_SIZE;
-    size_t   alloc_size   = pages_needed * PAGE_SIZE;
+    size_t   alloc_size   = (code_size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
     uint64_t user_code_va = next_user_code_addr;
 
     if (user_code_va + alloc_size >= USER_CODE_LIMIT) {
         __asm__ volatile("sti");
-        log_err("PROC", "Out of code space!");
+        log_err("PROC", "Out of user code space!");
         return -1;
     }
 
-    address_space_t* kspace = vmm_get_kernel_space();
+    address_space_t *kspace = vmm_get_kernel_space();
 
     for (size_t off = 0; off < alloc_size; off += PAGE_SIZE) {
-        void* mapped = vmm_alloc_page(kspace, (void*)(user_code_va + off), VMM_USER_PAGE);
+        void *mapped = vmm_alloc_page(kspace, (void *)(user_code_va + off), VMM_USER_PAGE);
         if (!mapped) {
             __asm__ volatile("sti");
             log_err("PROC", "Failed to map code page at offset %zu", off);
             return -1;
         }
-
         size_t copy_len = (off < code_size)
-                        ? ((code_size - off < PAGE_SIZE) ? (code_size - off) : PAGE_SIZE)
-                        : 0;
-
+            ? ((code_size - off < PAGE_SIZE) ? (code_size - off) : PAGE_SIZE) : 0;
         if (copy_len)
-            memcpy((void*)(user_code_va + off), (uint8_t*)entry + off, copy_len);
-
+            memcpy((void *)(user_code_va + off), (uint8_t *)entry + off, copy_len);
         if (copy_len < PAGE_SIZE)
-            memset((void*)(user_code_va + off + copy_len), 0, PAGE_SIZE - copy_len);
+            memset((void *)(user_code_va + off + copy_len), 0, PAGE_SIZE - copy_len);
     }
 
-    int slot = -1;
-    for (int i = 0; i < MAX_PROCESSES; i++) {
-        if (proc_table[i].state == PROC_UNUSED) {
-            slot = i;
-            break;
-        }
-    }
-
-    if (slot < 0) {
+    uint64_t stack_top, stack_base, initial_rsp;
+    if (user_map_stack(kspace, &stack_top, &stack_base, &initial_rsp) < 0) {
         __asm__ volatile("sti");
-        log_err("PROC", "No free PCB slot!");
         return -1;
     }
-
-    uint64_t stack_top  = USER_STACK_ARENA + (uint64_t)(slot + 1) * USER_STACK_VSIZE;
-    uint64_t stack_base = stack_top - USER_STACK_VSIZE;
-
-    if (stack_top > USER_SPACE_END) {
-        __asm__ volatile("sti");
-        log_err("PROC", "Stack region overflows user address space!");
-        return -1;
-    }
-
-    uint64_t initial_stack_page = (stack_top - PAGE_SIZE) & ~((uint64_t)PAGE_SIZE - 1);
-    void* mapped = vmm_alloc_page(kspace, (void*)initial_stack_page, VMM_USER_PAGE);
-    if (!mapped) {
-        __asm__ volatile("sti");
-        log_err("PROC", "Failed to map initial stack page!");
-        return -1;
-    }
-    memset((void*)initial_stack_page, 0, PAGE_SIZE);
-
-    uint64_t initial_rsp = (stack_top - 16) & ~0xFULL;
 
     int pid = proc_create_internal(
         user_code_va, priority, parent, PROC_TYPE_USER,
         user_code_va, user_code_va + code_size,
-        stack_base, initial_rsp
-    );
+        stack_base, stack_top, initial_rsp, NULL);
 
     if (pid < 0) {
         __asm__ volatile("sti");
@@ -314,59 +385,163 @@ int proc_create_user(void (*entry)(void), void (*end_marker)(void),
     }
 
     next_user_code_addr = user_code_va + alloc_size;
-
     __asm__ volatile("sti");
     log_ok("PROC", "Created user task PID %d | code=[0x%lx,0x%lx) stack=[0x%lx,0x%lx)",
            pid, user_code_va, user_code_va + code_size, stack_base, initial_rsp);
     return pid;
 }
 
+int proc_create_user_image(const uint8_t *image, size_t image_size,
+                           uint64_t load_vaddr, uint64_t entry_vaddr,
+                           uint32_t priority, uint32_t parent)
+{
+    __asm__ volatile("cli");
+
+    if (!image || image_size == 0) {
+        __asm__ volatile("sti");
+        log_err("PROC", "proc_create_user_image: null or empty image");
+        return -1;
+    }
+
+    if (load_vaddr < USER_CODE_BASE || load_vaddr >= USER_CODE_LIMIT) {
+        __asm__ volatile("sti");
+        log_err("PROC", "load_vaddr 0x%lx outside user code range [0x%lx, 0x%lx)",
+                load_vaddr, USER_CODE_BASE, USER_CODE_LIMIT);
+        return -1;
+    }
+
+    if (entry_vaddr < load_vaddr || entry_vaddr >= load_vaddr + image_size) {
+        __asm__ volatile("sti");
+        log_err("PROC", "entry_vaddr 0x%lx outside image [0x%lx, 0x%lx)",
+                entry_vaddr, load_vaddr, load_vaddr + image_size);
+        return -1;
+    }
+
+    size_t alloc_size = ((image_size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1));
+
+    if (load_vaddr + alloc_size > USER_CODE_LIMIT) {
+        __asm__ volatile("sti");
+        log_err("PROC", "Image overflows USER_CODE_LIMIT");
+        return -1;
+    }
+
+    address_space_t *proc_space = vmm_create_address_space();
+    if (!proc_space) {
+        __asm__ volatile("sti");
+        log_err("PROC", "Failed to create address space!");
+        return -1;
+    }
+
+    for (size_t off = 0; off < alloc_size; off += PAGE_SIZE) {
+        const uint8_t *src      = (off < image_size) ? (image + off) : NULL;
+        size_t         copy_len = (off < image_size)
+            ? ((image_size - off < PAGE_SIZE) ? (image_size - off) : PAGE_SIZE)
+            : 0;
+
+        if (!map_user_page(proc_space, load_vaddr + off, src, copy_len)) {
+            vmm_destroy_address_space(proc_space);
+            __asm__ volatile("sti");
+            log_err("PROC", "Failed to map code page at offset %zu", off);
+            return -1;
+        }
+    }
+
+    uint64_t stack_top, stack_base, initial_rsp;
+    if (user_map_stack(proc_space, &stack_top, &stack_base, &initial_rsp) < 0) {
+        vmm_destroy_address_space(proc_space);
+        __asm__ volatile("sti");
+        return -1;
+    }
+
+    int pid = proc_create_internal(
+        entry_vaddr, priority, parent, PROC_TYPE_USER,
+        load_vaddr, load_vaddr + image_size,
+        stack_base, stack_top, initial_rsp,
+        proc_space);
+
+    if (pid < 0) {
+        vmm_destroy_address_space(proc_space);
+        __asm__ volatile("sti");
+        log_err("PROC", "Failed to create user task!");
+        return -1;
+    }
+
+    __asm__ volatile("sti");
+    log_ok("PROC",
+           "Created user task PID %d | code=[0x%lx,0x%lx) entry=0x%lx stack=[0x%lx,0x%lx)",
+           pid, load_vaddr, load_vaddr + image_size,
+           entry_vaddr, stack_base, initial_rsp);
+    return pid;
+}
+
 void __attribute__((noreturn)) proc_exit(uint64_t exit_code)
 {
+    __asm__ volatile("cli");
+
     if (current_proc < 0)
         goto halt;
 
     int exiting = current_proc;
-    int pid = proc_table[exiting].proc.PID;
+    int pid     = proc_table[exiting].proc.PID;
     log_info("PROC", "Process PID %d exiting", pid);
     proc_table[exiting].state = PROC_ZOMBIE;
 
+    address_space_t *old_space = proc_table[exiting].address_space;
+
     int next = -1;
     for (int i = 1; i <= MAX_PROCESSES; i++) {
-        int candidate = (exiting + i) % MAX_PROCESSES;
-        if (proc_table[candidate].state == PROC_READY &&
-            proc_table[candidate].state != PROC_BLOCKED) {
-            next = candidate;
-            break;
+        int c = (exiting + i) % MAX_PROCESSES;
+        if (proc_table[c].state == PROC_READY &&
+            proc_table[c].proc.Type == PROC_TYPE_USER) { next = c; break; }
+    }
+    if (next < 0) {
+        for (int i = 1; i <= MAX_PROCESSES; i++) {
+            int c = (exiting + i) % MAX_PROCESSES;
+            if (proc_table[c].state == PROC_READY) { next = c; break; }
         }
     }
 
-    memset(&proc_table[exiting], 0, sizeof(PCB));
+    log_info("PROC", "Process %d exited with status %d", pid, (int)exit_code);
+    printf("Process %d exited with status %d\n", pid, (int)exit_code);
 
-    log_info("PROC", "Process %d exited with status %d", pid, exit_code);
-    printf("Process %d exited with status %d\n", pid, exit_code);
+    memset(&proc_table[exiting], 0, offsetof(PCB, kernel_stack));
+    proc_table[exiting].state = PROC_UNUSED;
 
     if (next < 0)
         goto halt;
 
     current_proc = next;
     proc_table[next].state = PROC_RUNNING;
+    x86_64_TSS_SetKernelStack(proc_table[next].kernel_stack_top);
+
+    vmm_switch_space(pcb_space(&proc_table[next]));
+
+    if (old_space)
+        vmm_destroy_address_space(old_space);
 
     if (proc_table[next].proc.Type == PROC_TYPE_USER) {
-        x86_64_TSS_SetKernelStack(proc_table[next].kernel_stack_top);
         enter_usermode(proc_table[next].context.rip, proc_table[next].context.rsp);
+        __builtin_unreachable();
     }
 
-halt:
-    log_info("PROC", "All user tasks exited, idling");
-    current_proc = next;
     __asm__ volatile("sti");
     while (1) __asm__ volatile("hlt");
+    __builtin_unreachable();
 
+halt:
+    if (current_proc >= 0 && proc_table[current_proc].address_space) {
+        address_space_t *dying = proc_table[current_proc].address_space;
+        vmm_switch_space(vmm_get_kernel_space());
+        vmm_destroy_address_space(dying);
+    }
+    log_info("PROC", "All tasks exited, idling");
+    current_proc = -1;
+    __asm__ volatile("sti");
+    while (1) __asm__ volatile("hlt");
     __builtin_unreachable();
 }
 
-void proc_schedule_interrupt(Registers* frame)
+void proc_schedule_interrupt(Registers *frame)
 {
     if (!scheduling_enabled)
         return;
@@ -384,8 +559,11 @@ void proc_schedule_interrupt(Registers* frame)
 
     current_proc = next;
     proc_table[next].state = PROC_RUNNING;
-    if (proc_table[next].proc.Type == PROC_TYPE_USER)
-        x86_64_TSS_SetKernelStack(proc_table[next].kernel_stack_top);
+
+    x86_64_TSS_SetKernelStack(proc_table[next].kernel_stack_top);
+
+    vmm_switch_space(pcb_space(&proc_table[next]));
+
     *frame = proc_table[next].context;
 }
 
