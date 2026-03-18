@@ -21,6 +21,9 @@ typedef struct {
     uint64_t code_vaddr_end;
     uint64_t stack_vaddr_base;
     uint64_t stack_vaddr_top;
+
+    uint64_t heap_start;
+    uint64_t heap_end;
 } PCB;
 
 static PCB      proc_table[MAX_PROCESSES];
@@ -144,6 +147,9 @@ bool proc_is_valid_demand_addr(uint64_t vaddr)
 
     uint64_t code_fence = (pcb->code_vaddr_end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     if (vaddr >= pcb->code_vaddr_start && vaddr < code_fence)
+        return true;
+
+    if (vaddr >= pcb->heap_start && vaddr < pcb->heap_end)
         return true;
 
     return false;
@@ -328,6 +334,8 @@ static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t pare
         pcb->code_vaddr_end   = code_end;
         pcb->stack_vaddr_base = stack_base;
         pcb->stack_vaddr_top  = stack_top;
+        pcb->heap_start = (code_end + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+        pcb->heap_end   = pcb->heap_start;
     }
 
     return pcb->proc.PID;
@@ -652,4 +660,74 @@ int proc_get_current_pid(void)
     if (current_proc < 0)
         return -1;
     return proc_table[current_proc].proc.PID;
+}
+
+uint64_t proc_brk(uint64_t new_brk)
+{
+    if (current_proc < 0)
+        return (uint64_t)-1;
+
+    PCB *pcb = &proc_table[current_proc];
+
+    if (new_brk == 0)
+        return pcb->heap_end;
+
+    uint64_t limit = pcb->stack_vaddr_base ? pcb->stack_vaddr_base : USER_CODE_LIMIT;
+
+    if (new_brk < pcb->heap_start || new_brk > limit)
+        return (uint64_t)-1;
+
+    uint64_t old_end  = pcb->heap_end;
+    uint64_t old_page = (old_end  + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+    uint64_t new_page = (new_brk  + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+
+    if (new_brk > old_end) {
+        for (uint64_t va = old_page; va < new_page; va += PAGE_SIZE) {
+            if (pcb->address_space) {
+                if (!map_user_page(pcb->address_space, va, NULL, 0))
+                    return (uint64_t)-1;
+            } else {
+                if (!vmm_alloc_page(vmm_get_kernel_space(), (void *)va, VMM_USER_PAGE))
+                    return (uint64_t)-1;
+            }
+        }
+    } else if (new_brk < old_end) {
+        address_space_t *space = pcb_space(pcb);
+        for (uint64_t va = new_page; va < old_page; va += PAGE_SIZE) {
+            vmm_unmap(space, (void *)va);
+            vmm_invlpg((void *)va);
+        }
+    }
+
+    pcb->heap_end = new_brk;
+    return old_end;
+}
+
+int64_t proc_sbrk(int64_t increment)
+{
+    if (current_proc < 0)
+        return (int64_t)-1;
+
+    PCB     *pcb     = &proc_table[current_proc];
+    uint64_t old_brk = pcb->heap_end;
+
+    if (increment == 0)
+        return (int64_t)old_brk;
+
+    uint64_t new_brk;
+    if (increment > 0) {
+        new_brk = old_brk + (uint64_t)increment;
+        if (new_brk < old_brk)
+            return (int64_t)-1;
+    } else {
+        uint64_t dec = (uint64_t)(-increment);
+        if (dec > old_brk - pcb->heap_start)
+            return (int64_t)-1;
+        new_brk = old_brk - dec;
+    }
+
+    if (proc_brk(new_brk) == (uint64_t)-1)
+        return (int64_t)-1;
+
+    return (int64_t)old_brk;
 }

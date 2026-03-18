@@ -8,6 +8,7 @@
 #define SYSCALL_WRITE 1
 #define SYSCALL_OPEN 2
 #define SYSCALL_CLOSE 3
+#define SYSCALL_BRK 12
 #define SYSCALL_EXIT 60
 #define SYSCALL_BINRUN 301
 #define SYSCALL_WAIT 302
@@ -58,5 +59,7 @@ uint64_t waitpid(uint64_t pid);
  * Executes a binary as a child process and returns the pid
  */
 uint64_t binrun(const char* path);
+
+uint64_t brk(uint64_t addr);
 
 #endif
