@@ -10,8 +10,14 @@ static uint32_t fg_color = 0xFFFFFF;
 static uint32_t bg_color = 0x000000;
 
 static bool c_escape_mode = false;
-static char c_escape_buf[16];
+static char c_escape_buf[26];
 static int  c_escape_pos  = 0;
+
+static void console_clear_text()
+{
+    tr_clear();
+    draw_cursor();
+}
 
 void console_putc(char c)
 {
@@ -42,6 +48,15 @@ static void draw_cursor(void)
 static void handle_escape_sequence(void)
 {
     c_escape_buf[c_escape_pos] = 0;
+
+    if (c_escape_pos >= 2 && c_escape_buf[0] == '[') {
+        if (c_escape_pos == 3 && c_escape_buf[1] == '2' && c_escape_buf[2] == 'J') {
+            console_clear_text();
+            c_escape_mode = false;
+            c_escape_pos  = 0;
+            return;
+        }
+    }
 
     int fg = -1, bg = -1;
     if (c_escape_pos >= 2 && c_escape_buf[c_escape_pos - 1] == 'm') {

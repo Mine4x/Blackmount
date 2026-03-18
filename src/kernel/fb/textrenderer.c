@@ -13,6 +13,13 @@ static uint32_t screen_height;
 
 static bool started = false;
 
+void tr_clear()
+{
+    cursor_x = 0;
+    cursor_y = 0;
+    fb_clear(bg_color);
+}
+
 static void draw_char(uint32_t px, uint32_t py, char c) {
     unsigned char uc = (unsigned char)c;
     const font_t *font = font_get_current();
