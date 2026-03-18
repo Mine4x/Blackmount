@@ -8,6 +8,7 @@
 #define SYSCALL_WRITE 1
 #define SYSCALL_OPEN 2
 #define SYSCALL_CLOSE 3
+#define SYSCALL_WAIT 302
 #define SYSCALL_EXIT 60
 
 /*
@@ -46,5 +47,10 @@ uint64_t open(const char* path);
  * Closes a open file
  */
 uint64_t close(uint64_t fd);
+
+/*
+ * Wait for a child process to exit
+ */
+uint64_t waitpid(uint64_t pid);
 
 #endif

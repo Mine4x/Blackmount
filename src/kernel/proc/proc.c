@@ -30,6 +30,7 @@ static int      scheduling_enabled  = 0;
 static uint64_t next_user_code_addr = USER_CODE_BASE;
 
 extern void enter_usermode(uint64_t entry, uint64_t stack);
+extern void resume_kernel_context(Registers *ctx);
 
 #define VMM_SCRATCH_VA  ((void *)0xFFFFFFFF80F00000ULL)
 
@@ -65,6 +66,70 @@ void proc_unblock(int pid)
     int index = proc_find_index(pid);
     if (index < 0) { log_err("PROC", "Unable to get index from pid: %d", pid); return; }
     proc_table[index].state = PROC_READY;
+}
+
+static void proc_kill_children(uint32_t parent_pid)
+{
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        PCB *child = &proc_table[i];
+
+        if (child->state == PROC_UNUSED || child->state == PROC_ZOMBIE)
+            continue;
+
+        if (child->proc.PPID != parent_pid)
+            continue;
+
+        proc_kill_children(child->proc.PID);
+
+        log_info("PROC", "Killing child PID %d (parent PID %d)",
+                 child->proc.PID, parent_pid);
+
+        if (child->address_space) {
+            vmm_destroy_address_space(child->address_space);
+            child->address_space = NULL;
+        }
+
+        memset(child, 0, offsetof(PCB, kernel_stack));
+        child->state = PROC_UNUSED;
+    }
+}
+
+static void proc_terminate(int index, uint64_t exit_code)
+{
+    PCB *pcb = &proc_table[index];
+    int pid  = pcb->proc.PID;
+
+    log_info("PROC", "Terminating PID %d", pid);
+
+    pcb->proc.ExitCode = exit_code;
+    pcb->state = PROC_ZOMBIE;
+
+    proc_kill_children(pid);
+
+    int parent_idx = proc_find_index(pcb->proc.PPID);
+    if (parent_idx >= 0) {
+        PCB *parent = &proc_table[parent_idx];
+
+        if (parent->proc.WaitingFor == pid) {
+            parent->proc.WaitingFor = -1;
+            proc_unblock(parent->proc.PID);
+        }
+    }
+}
+
+static void proc_reap(int index)
+{
+    PCB *pcb = &proc_table[index];
+
+    log_info("PROC", "Reaping PID %d", pcb->proc.PID);
+
+    if (pcb->address_space) {
+        vmm_destroy_address_space(pcb->address_space);
+        pcb->address_space = NULL;
+    }
+
+    memset(pcb, 0, offsetof(PCB, kernel_stack));
+    pcb->state = PROC_UNUSED;
 }
 
 bool proc_is_valid_demand_addr(uint64_t vaddr)
@@ -232,12 +297,13 @@ static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t pare
     PCB *pcb = &proc_table[slot];
     memset(pcb, 0, sizeof(PCB));
 
-    pcb->proc.PID      = next_pid++;
-    pcb->proc.PPID     = parent;
-    pcb->proc.Priority = priority;
-    pcb->proc.Type     = type;
-    pcb->state         = PROC_READY;
-    pcb->address_space = address_space;
+    pcb->proc.PID        = next_pid++;
+    pcb->proc.WaitingFor = -1;
+    pcb->proc.PPID       = parent;
+    pcb->proc.Priority   = priority;
+    pcb->proc.Type       = type;
+    pcb->state           = PROC_READY;
+    pcb->address_space   = address_space;
 
     uint64_t kstack_top = (uint64_t)(pcb->kernel_stack + PROC_STACK_SIZE) & ~0xFULL;
     pcb->kernel_stack_top = kstack_top;
@@ -474,35 +540,35 @@ int proc_create_user_image(const uint8_t *image, size_t image_size,
     return pid;
 }
 
-static void proc_kill_children(uint32_t parent_pid)
+uint64_t proc_wait_pid(uint64_t pid)
 {
-    for (int i = 0; i < MAX_PROCESSES; i++) {
-        PCB *child = &proc_table[i];
+    int child_idx = proc_find_index(pid);
+    if (child_idx < 0)
+        return (uint64_t)-1;
 
-        if (child->state == PROC_UNUSED || child->state == PROC_ZOMBIE)
-            continue;
+    PCB *child = &proc_table[child_idx];
 
-        if (child->proc.PPID != parent_pid)
-            continue;
+    if (child->state != PROC_ZOMBIE) {
+        int parent_pid = proc_get_current_pid();
+        int parent_idx = proc_find_index(parent_pid);
+        if (parent_idx < 0)
+            return (uint64_t)-1;
 
-        proc_kill_children(child->proc.PID);
+        PCB *parent = &proc_table[parent_idx];
+        parent->proc.WaitingFor = pid;
+        parent->state = PROC_BLOCKED;
 
-        log_info("PROC", "Killing child PID %d (parent PID %d)",
-                 child->proc.PID, parent_pid);
+        proc_yield();
 
-        if (child->address_space) {
-            vmm_destroy_address_space(child->address_space);
-            child->address_space = NULL;
-        }
-
-        memset(child, 0, offsetof(PCB, kernel_stack));
-        child->state = PROC_UNUSED;
+        child_idx = proc_find_index(pid);
+        if (child_idx < 0)
+            return (uint64_t)-1;
+        child = &proc_table[child_idx];
     }
-}
 
-uint64_t proc_wait_pid(uint64_t pid, uint64_t _status, uint64_t options)
-{
-    
+    uint64_t exit_code = child->proc.ExitCode;
+    proc_reap(child_idx);
+    return exit_code;
 }
 
 void __attribute__((noreturn)) proc_exit(uint64_t exit_code)
@@ -513,52 +579,27 @@ void __attribute__((noreturn)) proc_exit(uint64_t exit_code)
         goto halt;
 
     int exiting = current_proc;
-    int pid     = proc_table[exiting].proc.PID;
-    log_info("PROC", "Process PID %d exiting", pid);
-    proc_table[exiting].state = PROC_ZOMBIE;
 
-    proc_kill_children(pid);
+    proc_terminate(exiting, exit_code);
 
     address_space_t *old_space = proc_table[exiting].address_space;
 
-    int next = -1;
-    for (int i = 1; i <= MAX_PROCESSES; i++) {
-        int c = (exiting + i) % MAX_PROCESSES;
-        if (proc_table[c].state == PROC_READY &&
-            proc_table[c].proc.Type == PROC_TYPE_USER) { next = c; break; }
-    }
-    if (next < 0) {
-        for (int i = 1; i <= MAX_PROCESSES; i++) {
-            int c = (exiting + i) % MAX_PROCESSES;
-            if (proc_table[c].state == PROC_READY) { next = c; break; }
-        }
-    }
-
-    log_info("PROC", "Process %d exited with status %d", pid, (int)exit_code);
-    printf("Process %d exited with status %d\n", pid, (int)exit_code);
-
-    memset(&proc_table[exiting], 0, offsetof(PCB, kernel_stack));
-    proc_table[exiting].state = PROC_UNUSED;
+    int next = find_next();
 
     if (next < 0)
         goto halt;
 
     current_proc = next;
     proc_table[next].state = PROC_RUNNING;
-    x86_64_TSS_SetKernelStack(proc_table[next].kernel_stack_top);
 
+    x86_64_TSS_SetKernelStack(proc_table[next].kernel_stack_top);
     vmm_switch_space(pcb_space(&proc_table[next]));
 
-    if (old_space)
+    if (old_space && old_space != proc_table[next].address_space)
         vmm_destroy_address_space(old_space);
 
-    if (proc_table[next].proc.Type == PROC_TYPE_USER) {
-        enter_usermode(proc_table[next].context.rip, proc_table[next].context.rsp);
-        __builtin_unreachable();
-    }
+    resume_kernel_context(&proc_table[next].context);
 
-    __asm__ volatile("sti");
-    while (1) __asm__ volatile("hlt");
     __builtin_unreachable();
 
 halt:

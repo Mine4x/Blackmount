@@ -86,3 +86,16 @@ uint64_t close(uint64_t fd)
         0
     );
 }
+
+uint64_t waitpid(uint64_t pid)
+{
+    return syscall6(
+        SYSCALL_WAIT,
+        pid,
+        0,
+        0,
+        0,
+        0,
+        0
+    );
+}

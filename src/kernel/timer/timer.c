@@ -16,6 +16,8 @@ volatile uint32_t g_pit_ticks = 0;
 void timer_irq_handler(Registers* regs) {
     g_pit_ticks++;
 
+    log_info("T", "T");
+
     proc_update_time(1);
     proc_schedule_interrupt(regs);
 }

@@ -35,7 +35,11 @@ static void binary_check_and_execute(const char* prefix, const char* input)
     
     close(fd);
 
-    syscall6(301, (uint64_t)ipath, (uint64_t)10, 0, 0, 0, 0);
+    int pid = syscall6(301, (uint64_t)ipath, (uint64_t)10, 0, 0, 0, 0); // Launch the bin
+    if (pid < 0)
+        return;
+    
+    waitpid(pid);
 }
 
 int main()

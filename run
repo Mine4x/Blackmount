@@ -7,8 +7,6 @@ qemu-system-x86_64 \
   -cdrom build/nbos.iso \
   -hda build/harddisk.img \
   -boot d \
-  -no-reboot \
-  -no-shutdown \
   -device qemu-xhci,id=xhci,p3=4,p2=4 \
   -trace usb_xhci_* -D /tmp/qemu-xhci.log \
   -device usb-kbd,id=usbkbd \

@@ -19,7 +19,8 @@ typedef struct {
     uint32_t PPID;
     uint32_t Priority;
     uint64_t CPUTime;
-    uint64_t WaitingFor;
+    uint32_t WaitingFor;
+    uint32_t ExitCode;
     ProcType Type;
 } Proc_t;
 
@@ -55,5 +56,7 @@ void proc_enter_syscall(void);
 void proc_exit_syscall(void);
 bool proc_is_blocked(int pid);
 bool proc_is_valid_demand_addr(uint64_t vaddr);
+
+uint64_t proc_wait_pid(uint64_t pid);
 
 #define USER_PROGRAM_END() void __user_program_end_##__LINE__(void) {}
