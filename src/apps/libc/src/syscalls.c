@@ -99,3 +99,16 @@ uint64_t waitpid(uint64_t pid)
         0
     );
 }
+
+uint64_t binrun(const char* path)
+{
+    return syscall6(
+        SYSCALL_BINRUN,
+        (uint64_t)path,
+        (uint64_t)10,
+        0,
+        0,
+        0,
+        0
+    );
+}

@@ -35,7 +35,7 @@ static void binary_check_and_execute(const char* prefix, const char* input)
     
     close(fd);
 
-    int pid = syscall6(301, (uint64_t)ipath, (uint64_t)10, 0, 0, 0, 0); // Launch the bin
+    int pid = binrun(ipath);
     if (pid < 0)
         return;
     
@@ -44,18 +44,20 @@ static void binary_check_and_execute(const char* prefix, const char* input)
 
 int main()
 {
-    bool should_exit = false;
-
     printf("Mountshell v0.0.1\nBuild for BlackmountOS\n");
 
-    while (!should_exit)
+    while (true)
     {
         print_prefix();
 
         char path[124];
         scanf("%s", path);
 
-        should_exit = check_inbuilt(path);
+        if (check_inbuilt(path))
+        {
+            printf("Goodbye!\n");
+            return 0;
+        }
 
         binary_check_and_execute("/bin/", path);
     }

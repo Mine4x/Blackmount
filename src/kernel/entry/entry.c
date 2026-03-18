@@ -35,7 +35,7 @@ extern uint8_t __bss_end;
 
 static void ok(const char* string)
 {
-    printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
+    //printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
 }
 
 static void fail(const char* string) {
@@ -137,7 +137,7 @@ void kmain(void)
     log_ok("Kernel", "Loaded and registerd syscalls");
     ok("Loaded and registerd syscalls");
 
-    int r = bin_load_elf("/bin/mountshell", 10, 0);
+    int r = bin_load_elf("/bin/misys", 10, 0);
     if (r < 0)
     {
         log_err("Kernel", "Failed to load binary: %d", r);
@@ -147,8 +147,6 @@ void kmain(void)
 
     log_ok("Kernel", "Initialized all imortant systems");
     ok("Kernel Started completly");
-
-    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\033[0m\n");
 
     proc_start_scheduling();
 
