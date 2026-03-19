@@ -21,7 +21,7 @@ int manager_init(void)
 
 int manager_register_group(const char* name)
 {
-    if (group_count == MAX_GROUPS)
+    if (group_count == MAX_GROUPS || group_exists(name))
         return -1;
 
     group* g = malloc(sizeof(group));
@@ -37,7 +37,7 @@ int manager_register_group(const char* name)
 
 int manager_register_service(group* grp, const char* name, const char* description, const char* exec, char* after_names)
 {
-    if (service_count == MAX_SERVICES)
+    if (service_count == MAX_SERVICES || service_exists(name))
         return -1;
 
     service* s = malloc(sizeof(service));
@@ -113,4 +113,24 @@ group* find_group(const char* name)
             return groups[i];
     }
     return NULL;
+}
+
+bool group_exists(const char* name)
+{
+    for (int i = 0; i < group_count; i++)
+    {
+        if (strcmp(groups[i]->name, name) == 0)
+            return true;
+    }
+    return false;
+}
+
+bool service_exists(const char* name)
+{
+    for (int i = 0; i < service_count; i++)
+    {
+        if (strcmp(services[i]->name, name) == 0)
+            return true;
+    }
+    return false;
 }

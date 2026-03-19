@@ -12,10 +12,11 @@ int main()
         return -1;
     }
     
-    manager_register_group("black");
+    parse_respond r = parse_and_register_group("/etc/misys/groups/examplegroup.ini");
+    printf("Registered group with %d\n", r);
 
-    parse_respond r = parse_and_register_service("/etc/misys/exampleservice.ini");
-    printf("Registerd service with %d\n", r);
+    r = parse_and_register_service("/etc/misys/services/exampleservice.ini");
+    printf("Registered service with %d\n", r);
 
     log_ok("Started System completly");
 

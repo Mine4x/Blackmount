@@ -24,6 +24,71 @@ static char* strip_quotes(char* str)
     return str;
 }
 
+parse_respond parse_and_register_group(const char* path)
+{
+    int fd = open(path);
+    if (fd < 0)
+        return NO_FILE;
+
+    char buffer[246];
+
+    int bytes_read = read(fd, buffer, 245);
+    if (bytes_read < 0)
+    {
+        close(fd);
+        return MEMMORY;
+    }
+
+    buffer[bytes_read] = '\0';
+    close(fd);
+
+    char *name = NULL;
+
+    char* line = strtok(buffer, "\n");
+    while (line)
+    {
+        line = trim(line);
+
+        if (*line == '\0' || *line == '#')
+        {
+            line = strtok(NULL, "\n");
+            continue;
+        }
+
+        char* comment = strchr(line, '#');
+        if (comment) *comment = '\0';
+
+        char* eq = strchr(line, '=');
+        if (!eq)
+        {
+            line = strtok(NULL, "\n");
+            continue;
+        }
+
+        *eq = '\0';
+        char* key = trim(line);
+        char* value = trim(eq + 1);
+        value = strip_quotes(value);
+
+        if (strcmp(key, "name") == 0)
+            name = value;
+        
+        line = strtok(NULL, "\n");
+    }
+
+    if (!name)
+        return INVALID;
+    
+    int r =manager_register_group(name);
+
+    if (r < 0)
+    {
+        return MANAGER_ERROR;
+    }
+
+    return OK;
+}
+
 parse_respond parse_and_register_service(const char* path)
 {
     int fd = open(path);
@@ -36,7 +101,7 @@ parse_respond parse_and_register_service(const char* path)
     if (bytes_read < 0)
     {
         close(fd);
-        return MALLOC;
+        return MEMMORY;
     }
 
     buffer[bytes_read] = '\0';
@@ -114,13 +179,18 @@ parse_respond parse_and_register_service(const char* path)
     if (after_group)
         strcpy(after_buf, after_group);
 
-    manager_register_service(
+    int r = manager_register_service(
         grp,
         name,
         description ? description : "",
         exec,
         after_group ? after_buf : NULL
     );
+
+    if (r < 0)
+    {
+        return MANAGER_ERROR;
+    }
 
     return OK;
 }
