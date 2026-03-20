@@ -73,7 +73,7 @@ void fb_init(struct limine_framebuffer_response *response) {
     log_ok(FB_MODULE, "Framebuffer initialized successfully");
 }
 
-void fb_dev()
+void fb_make_dev()
 {
     if (fb_device_init("/dev/fb") == NULL)
     {

@@ -35,5 +35,17 @@ static int dispatcher(int pid, uint64_t req, void *arg)
 
 device_t* tty_device_init(const char* path)
 {
+    if (VFS_Create(path, false) < 0)
+        return NULL;
 
+    device_t* dev = kmalloc(sizeof(device_t));
+
+    if (!dev) return NULL;
+
+    dev->path = path;
+    dev->dispatch = &dispatcher;
+
+    device_register(dev);
+
+    return dev;
 }

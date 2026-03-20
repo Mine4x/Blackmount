@@ -30,6 +30,7 @@
 #include <drivers/usb/xhci/hid_keyboard.h>
 #include <loaders/bin_loader.h>
 #include <device/device.h>
+#include <console/console.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -128,7 +129,8 @@ void kmain(void)
     log_ok("Boot", "Initialized VFS");
     ok("Initialized VFS");
 
-    fb_dev();
+    fb_make_dev();
+    console_make_dev();
 
     proc_init();
     log_ok("Boot", "Initialized Multitasking");
