@@ -10,6 +10,8 @@ static int clear(int pid, void *arg)
 
 static int set_color(int pid, void *arg)
 {
+    if (!arg) return -1;
+
     tty_color_t* color = (tty_color_t*)arg;
 
     tr_set_color(color->fg, color->bg);
@@ -19,8 +21,6 @@ static int set_color(int pid, void *arg)
 
 static int dispatcher(int pid, uint64_t req, void *arg)
 {
-    if (!arg) return -1;
-
     switch (req)
     {
     case TTY_CLEAR:

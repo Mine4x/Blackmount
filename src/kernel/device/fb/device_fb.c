@@ -7,6 +7,8 @@
 
 static int get_info(int pid, void* arg)
 {
+    if (!arg) return -1;
+
     fb_info_t info;
 
     info.bpp    = fb_get_bpp();
@@ -32,8 +34,6 @@ static int get_info(int pid, void* arg)
 
 static int dispatcher(int pid, uint64_t req, void *arg)
 {
-    if (!arg) return -1;
-
     switch (req)
     {
     case FB_GET_INFO:
