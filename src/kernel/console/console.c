@@ -13,7 +13,7 @@ static bool c_escape_mode = false;
 static char c_escape_buf[26];
 static int  c_escape_pos  = 0;
 
-static void console_clear_text()
+void console_clear_text()
 {
     tr_clear();
     draw_cursor();
