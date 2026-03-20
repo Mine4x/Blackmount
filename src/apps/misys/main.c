@@ -23,6 +23,33 @@ struct linux_dirent64 {
 
 typedef parse_respond (*parse_fn)(const char*);
 
+static void scan_and_parse(const char* dir, parse_fn fn, const char* label);
+
+int main(void)
+{
+    if (manager_init() < 0) {
+        log_fail("FATAL: Unable to init group and service manager!\n Exiting!\n");
+        return -1;
+    }
+
+    scan_and_parse("/etc/misys/groups",   parse_and_register_group,   "group");
+    scan_and_parse("/etc/misys/services", parse_and_register_service, "service");
+
+    log_ok("Started System completely");
+    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\033[0m\n");
+
+    while (true) {
+        int pid = binrun("/bin/mountshell");
+        if (pid < 0) {
+            printf("Unable to start initial program!\nExiting misys!\n");
+            return -1;
+        }
+        waitpid(pid);
+    }
+
+    return 0;
+}
+
 static void scan_and_parse(const char* dir, parse_fn fn, const char* label)
 {
     int fd = open(dir);
@@ -88,29 +115,4 @@ static void scan_and_parse(const char* dir, parse_fn fn, const char* label)
 
     free(buf);
     close(fd);
-}
-
-int main(void)
-{
-    if (manager_init() < 0) {
-        log_fail("FATAL: Unable to init group and service manager!\n Exiting!\n");
-        return -1;
-    }
-
-    scan_and_parse("/etc/misys/groups",   parse_and_register_group,   "group");
-    scan_and_parse("/etc/misys/services", parse_and_register_service, "service");
-
-    log_ok("Started System completely");
-    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\033[0m\n");
-
-    while (true) {
-        int pid = binrun("/bin/mountshell");
-        if (pid < 0) {
-            printf("Unable to start initial program!\nExiting misys!\n");
-            return -1;
-        }
-        waitpid(pid);
-    }
-
-    return 0;
 }

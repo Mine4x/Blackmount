@@ -145,3 +145,30 @@ void* memcpy(void* dest, const void* src, size_t n)
 
     return dest;
 }
+
+void* memset(void* dest, int c, size_t n)
+{
+    uint8_t* d = (uint8_t*)dest;
+
+    while (n && ((uintptr_t)d & 7)) {
+        *d++ = (uint8_t)c;
+        n--;
+    }
+
+    uint64_t  wide = (uint8_t)c;
+    wide |= wide << 8;
+    wide |= wide << 16;
+    wide |= wide << 32;
+
+    uint64_t* dw = (uint64_t*)d;
+    while (n >= 8) {
+        *dw++ = wide;
+        n -= 8;
+    }
+
+    d = (uint8_t*)dw;
+    while (n--)
+        *d++ = (uint8_t)c;
+
+    return dest;
+}
