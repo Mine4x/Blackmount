@@ -46,5 +46,6 @@ void VFS_Init(void);
 int VFS_Write(int fd, size_t count, void *buf, bool privileged);
 int VFS_Set_Pos(int fd, uint32_t pos, bool privileged);
 void VFS_Unmount(void);
+int VFS_ioctl(int fd, uint64_t req, void *arg);
 
 int VFS_Write_old(fd_t file, uint8_t* data, size_t size);

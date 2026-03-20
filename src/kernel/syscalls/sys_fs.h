@@ -49,3 +49,8 @@ uint64_t sys_close(uint64_t fd)
 {
     return (uint64_t)VFS_Close(fd, false);
 }
+
+uint64_t sys_ioctl(uint64_t fd, uint64_t req, uint64_t arg)
+{
+    return VFS_ioctl((int)fd, req, (void*)arg);
+}

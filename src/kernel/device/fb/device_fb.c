@@ -3,6 +3,7 @@
 #include <heap.h>
 #include <proc/proc.h>
 #include <hal/vfs.h>
+#include <debug.h>
 
 static int get_info(int pid, void* arg)
 {
@@ -31,6 +32,7 @@ static int get_info(int pid, void* arg)
 
 static int dispatcher(int pid, uint64_t req, void *arg)
 {
+    log_info("T", "T");
     if (!arg) return -1;
 
     switch (req)

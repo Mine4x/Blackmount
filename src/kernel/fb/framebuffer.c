@@ -2,6 +2,8 @@
 #include <mem/vmm.h>
 #include <stdint.h>
 #include <string.h>
+#include <device/device.h>
+#include <device/fb/device_fb.h>
 #include <debug.h>
 
 #define FB_MODULE "FB"
@@ -69,6 +71,14 @@ void fb_init(struct limine_framebuffer_response *response) {
     }
     
     log_ok(FB_MODULE, "Framebuffer initialized successfully");
+}
+
+void fb_dev()
+{
+    if (fb_device_init("/dev/fb") == NULL)
+    {
+        log_warn(FB_MODULE, "Unable to initialize framebuffer device!");
+    }
 }
 
 void fb_putpixel(uint32_t x, uint32_t y, uint32_t color) {

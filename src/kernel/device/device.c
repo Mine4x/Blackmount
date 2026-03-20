@@ -1,6 +1,7 @@
 #include "device.h"
 #include <heap.h>
 #include <string.h>
+#include <hal/vfs.h>
 #include <debug.h>
 
 #define MAX_DEVICES 32
@@ -19,6 +20,9 @@ bool device_register(device_t* dev)
     for (int i = 0; i < MAX_DEVICES; i++) {
         if (!devices[i]) {
             devices[i] = dev;
+
+            VFS_Create(dev->path, false);
+            
             log_ok("DEVICE", "Registered device %s", dev->path);
             return true;
         }

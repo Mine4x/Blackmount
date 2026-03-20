@@ -114,12 +114,32 @@ int VFS_Open(const char* path, bool privileged)
                 open_files[i].flags = KERNEL;
             }
 
+            device_t* dev = device_get(path);
+            if (dev != NULL)
+            {
+                open_files[i].is_dev = true;
+                open_files[i].dev = dev;
+                log_info("VFS", "is dev");
+            }
+
             return i;
         }
     }
 
     ext2_close(ext2_file);
     return -1;
+}
+
+int VFS_ioctl(int fd, uint64_t req, void *arg)
+{
+    int pid = proc_get_current_pid();
+
+    if (!open_files[fd].exists || !open_files[fd].is_dev || open_files[fd].pid != pid)
+    {
+        return -1;
+    }
+
+    return open_files[fd].dev->dispatch(pid, req, arg);
 }
 
 int VFS_Write(int fd, size_t count, void *buf, bool privileged)
