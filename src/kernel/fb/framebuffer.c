@@ -180,3 +180,7 @@ uint32_t fb_get_height(void) {
 uint32_t fb_get_pitch(void)  { 
     return fb_pitch; 
 }
+
+uint32_t fb_get_bpp(void) {
+    return fb_bpp;
+}
