@@ -130,3 +130,19 @@ uint64_t ioctl(int fd, uint64_t req, void *arg)
         0
     );
 }
+
+uint64_t execve(const char *path, const char **argv, const char **envp)
+{
+    return syscall6(
+        SYSCALL_EXECVE,
+        (uint64_t)path,
+        (uint64_t)argv,
+        (uint64_t)envp,
+        0, 0, 0
+    );
+}
+
+uint64_t execv(const char *path, const char **argv)
+{
+    return execve(path, argv, NULL);
+}

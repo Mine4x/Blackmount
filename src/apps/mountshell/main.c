@@ -35,7 +35,7 @@ static void binary_check_and_execute(const char* prefix, const char* input)
     
     close(fd);
 
-    int pid = binrun(ipath);
+    int pid = execv(ipath, NULL);
     if (pid < 0)
         return;
     

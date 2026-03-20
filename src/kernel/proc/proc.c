@@ -731,3 +731,157 @@ int64_t proc_sbrk(int64_t increment)
 
     return (int64_t)old_brk;
 }
+
+static void push64_to_space(address_space_t *proc_space, uint64_t *sp, uint64_t val)
+{
+    address_space_t *kspace = vmm_get_kernel_space();
+    *sp -= 8;
+    uint64_t page_va  = *sp & ~(uint64_t)(PAGE_SIZE - 1);
+    size_t   page_off = *sp - page_va;
+    void *phys = vmm_get_physical(proc_space, (void *)page_va);
+    if (!phys) {
+        map_user_page(proc_space, page_va, NULL, 0);
+        phys = vmm_get_physical(proc_space, (void *)page_va);
+    }
+    vmm_map(kspace, VMM_SCRATCH_VA, phys, VMM_KERNEL_PAGE);
+    memcpy((uint8_t *)VMM_SCRATCH_VA + page_off, &val, 8);
+    vmm_unmap(kspace, VMM_SCRATCH_VA);
+    vmm_invlpg(VMM_SCRATCH_VA);
+}
+
+static uint64_t setup_user_stack_argv(address_space_t *proc_space,
+                                       uint64_t stack_top,
+                                       int argc, const char **argv,
+                                       int envc, const char **envp)
+{
+    address_space_t *kspace = vmm_get_kernel_space();
+    uint64_t sp = (stack_top - 16) & ~0xFULL;
+
+    uint64_t env_ptrs[envc];
+
+    for (int i = envc - 1; i >= 0; i--) {
+        size_t len = strlen(envp[i]) + 1;
+        sp -= len;
+
+        uint64_t page_va  = sp & ~(uint64_t)(PAGE_SIZE - 1);
+        size_t   page_off = sp - page_va;
+
+        void *phys = vmm_get_physical(proc_space, (void *)page_va);
+        if (!phys) {
+            map_user_page(proc_space, page_va, NULL, 0);
+            phys = vmm_get_physical(proc_space, (void *)page_va);
+        }
+
+        vmm_map(kspace, VMM_SCRATCH_VA, phys, VMM_KERNEL_PAGE);
+        memcpy((uint8_t *)VMM_SCRATCH_VA + page_off, envp[i], len);
+        vmm_unmap(kspace, VMM_SCRATCH_VA);
+        vmm_invlpg(VMM_SCRATCH_VA);
+
+        env_ptrs[i] = sp;
+    }
+
+    uint64_t arg_ptrs[argc];
+
+    for (int i = argc - 1; i >= 0; i--) {
+        size_t len = strlen(argv[i]) + 1;
+        sp -= len;
+
+        uint64_t page_va  = sp & ~(uint64_t)(PAGE_SIZE - 1);
+        size_t   page_off = sp - page_va;
+
+        void *phys = vmm_get_physical(proc_space, (void *)page_va);
+        if (!phys) {
+            map_user_page(proc_space, page_va, NULL, 0);
+            phys = vmm_get_physical(proc_space, (void *)page_va);
+        }
+
+        vmm_map(kspace, VMM_SCRATCH_VA, phys, VMM_KERNEL_PAGE);
+        memcpy((uint8_t *)VMM_SCRATCH_VA + page_off, argv[i], len);
+        vmm_unmap(kspace, VMM_SCRATCH_VA);
+        vmm_invlpg(VMM_SCRATCH_VA);
+
+        arg_ptrs[i] = sp;
+    }
+
+    sp &= ~0xFULL;
+
+    push64_to_space(proc_space, &sp, 0);
+    for (int i = envc - 1; i >= 0; i--)
+        push64_to_space(proc_space, &sp, env_ptrs[i]);
+
+    push64_to_space(proc_space, &sp, 0);
+    for (int i = argc - 1; i >= 0; i--)
+        push64_to_space(proc_space, &sp, arg_ptrs[i]);
+
+    push64_to_space(proc_space, &sp, (uint64_t)argc);
+
+    return sp;
+}
+
+int proc_create_user_image_argv(const uint8_t *image, size_t image_size,
+                                 uint64_t load_vaddr, uint64_t entry_vaddr,
+                                 uint32_t priority, uint32_t parent,
+                                 int argc, const char **argv,
+                                 int envc, const char **envp)
+{
+    __asm__ volatile("cli");
+
+    if (!image || image_size == 0) { __asm__ volatile("sti"); return -1; }
+
+    if (load_vaddr < USER_CODE_BASE || load_vaddr >= USER_CODE_LIMIT) {
+        __asm__ volatile("sti"); return -1;
+    }
+
+    if (entry_vaddr < load_vaddr || entry_vaddr >= load_vaddr + image_size) {
+        __asm__ volatile("sti"); return -1;
+    }
+
+    size_t alloc_size = (image_size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+
+    if (load_vaddr + alloc_size > USER_CODE_LIMIT) {
+        __asm__ volatile("sti"); return -1;
+    }
+
+    address_space_t *proc_space = vmm_create_address_space();
+    if (!proc_space) { __asm__ volatile("sti"); return -1; }
+
+    for (size_t off = 0; off < alloc_size; off += PAGE_SIZE) {
+        const uint8_t *src      = (off < image_size) ? (image + off) : NULL;
+        size_t         copy_len = (off < image_size)
+            ? ((image_size - off < PAGE_SIZE) ? (image_size - off) : PAGE_SIZE) : 0;
+
+        if (!map_user_page(proc_space, load_vaddr + off, src, copy_len)) {
+            vmm_destroy_address_space(proc_space);
+            __asm__ volatile("sti");
+            return -1;
+        }
+    }
+
+    uint64_t stack_top, stack_base, initial_rsp;
+    if (user_map_stack(proc_space, &stack_top, &stack_base, &initial_rsp) < 0) {
+        vmm_destroy_address_space(proc_space);
+        __asm__ volatile("sti");
+        return -1;
+    }
+
+    if (argc > 0 && argv)
+        initial_rsp = setup_user_stack_argv(proc_space, stack_top, argc, argv, envc, envp);
+
+    int pid = proc_create_internal(
+        entry_vaddr, priority, parent, PROC_TYPE_USER,
+        load_vaddr, load_vaddr + image_size,
+        stack_base, stack_top, initial_rsp,
+        proc_space);
+
+    if (pid < 0) {
+        vmm_destroy_address_space(proc_space);
+        __asm__ volatile("sti");
+        return -1;
+    }
+
+    __asm__ volatile("sti");
+    log_ok("PROC",
+           "Created user task PID %d | entry=0x%lx argc=%d",
+           pid, entry_vaddr, argc);
+    return pid;
+}
