@@ -1,6 +1,7 @@
 #include "console.h"
 #include <proc/proc.h>
 #include <debug.h>
+#include <device/tty/device_tty.h>
 
 static InputManager *input = NULL;
 
@@ -13,10 +14,18 @@ static bool c_escape_mode = false;
 static char c_escape_buf[26];
 static int  c_escape_pos  = 0;
 
-static void console_clear_text()
+void console_clear_text()
 {
     tr_clear();
     draw_cursor();
+}
+
+void console_make_dev()
+{
+    if (tty_device_init("/dev/tty") == NULL)
+    {
+        log_warn("Console", "Unable to create device");
+    }
 }
 
 void console_putc(char c)

@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <drivers/fs/ext/ext2.h>
+#include <device/device.h>
 
 typedef int fd_t;
 
@@ -24,6 +25,9 @@ typedef struct {
     file_flags_t flags;
     int pid;
     bool exists;
+
+    device_t* dev;
+    bool is_dev;
 } VFS_File_t;
 
 
@@ -42,5 +46,6 @@ void VFS_Init(void);
 int VFS_Write(int fd, size_t count, void *buf, bool privileged);
 int VFS_Set_Pos(int fd, uint32_t pos, bool privileged);
 void VFS_Unmount(void);
+int VFS_ioctl(int fd, uint64_t req, void *arg);
 
 int VFS_Write_old(fd_t file, uint8_t* data, size_t size);

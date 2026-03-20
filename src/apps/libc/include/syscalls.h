@@ -9,6 +9,7 @@
 #define SYSCALL_OPEN 2
 #define SYSCALL_CLOSE 3
 #define SYSCALL_BRK 12
+#define SYSCALL_IOCTL 16
 #define SYSCALL_EXIT 60
 #define SYSCALL_BINRUN 301
 #define SYSCALL_WAIT 302
@@ -61,5 +62,10 @@ uint64_t waitpid(uint64_t pid);
 uint64_t binrun(const char* path);
 
 uint64_t brk(uint64_t addr);
+
+/*
+ * Communicates with devices
+ */
+uint64_t ioctl(int fd, uint64_t req, void *arg);
 
 #endif

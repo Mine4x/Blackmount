@@ -24,6 +24,7 @@ void register_syscalls() {
     x86_64_Syscall_RegisterHandler(2, (SyscallHandler)sys_open);
     x86_64_Syscall_RegisterHandler(3, (SyscallHandler)sys_close);
     x86_64_Syscall_RegisterHandler(12, (SyscallHandler)proc_brk);
+    x86_64_Syscall_RegisterHandler(16, (SyscallHandler)sys_ioctl);
     x86_64_Syscall_RegisterHandler(24, (SyscallHandler)proc_yield);
     x86_64_Syscall_RegisterHandler(60, (SyscallHandler)proc_exit);
     x86_64_Syscall_RegisterHandler(302, (SyscallHandler)proc_wait_pid);

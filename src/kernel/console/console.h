@@ -33,6 +33,9 @@ void console_putc(char c);
 static void handle_escape_sequence(void);
 static void draw_cursor(void);
 
+void console_clear_text();
+void console_make_dev();
+
 static bool copy_to_user(void* user_ptr, const void* kernel_src, size_t n);
 bool console_init(void);
 void console_free(void);
