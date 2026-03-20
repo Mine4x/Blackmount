@@ -16,6 +16,7 @@ void print_int(int value);
 void print_hex(unsigned int value);
 void printf(const char* fmt, ...);
 
+char *fgets(char *buf, int size, int fd);
 void scanf(const char* fmt, ...);
 
 #endif

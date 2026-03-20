@@ -1,174 +1,123 @@
 #include <string.h>
+#include <stdlib.h>
+#include <stdint.h>
 
-int strcmp(const char* s1, const char* s2) {
-    size_t i = 0;
-    while (s1[i] && s2[i] && s1[i] == s2[i]) i++;
-    return (unsigned char)s1[i] - (unsigned char)s2[i];
-}
-
-void strcpy(char* dst, const char* src) {
-    size_t i = 0;
-    while (src[i]) {
-        dst[i] = src[i];
-        i++;
-    }
-    dst[i] = 0; // null terminator
-}
-
-void strcat(char* dst, const char* src) {
-    size_t i = 0;
-    size_t j = 0;
-
-    // find end of destination string
-    while (dst[i]) {
-        i++;
-    }
-
-    // copy src to the end of dst
-    while (src[j]) {
-        dst[i + j] = src[j];
-        j++;
-    }
-
-    // add null terminator
-    dst[i + j] = 0;
-}
-
-char* strdup(const char* s)
+size_t strlen(const char *s)
 {
-    if (!s) return NULL;  // handle NULL input
-
-    size_t len = strlen(s);
-    char* copy = malloc(len + 1); // +1 for null terminator
-    if (!copy) return NULL;       // allocation failed
-
-    strcpy(copy, s);              // copy the string
-    return copy;
+    size_t n = 0;
+    while (s[n]) n++;
+    return n;
 }
 
-size_t strlen(const char* s)
+int strcmp(const char *a, const char *b)
 {
-    size_t len = 0;
-    while (s[len] != '\0')
-        len++;
-    return len;
+    while (*a && *a == *b) { a++; b++; }
+    return (unsigned char)*a - (unsigned char)*b;
 }
 
-char* strtok(char* str, const char* delim)
+int strncmp(const char *s1, const char *s2, size_t n)
 {
-    static char* next = NULL;
+    while (n && *s1 && *s1 == *s2) { s1++; s2++; n--; }
+    if (n == 0) return 0;
+    return (unsigned char)*s1 - (unsigned char)*s2;
+}
 
-    if (str) next = str;
-    if (!next) return NULL;
+void strcpy(char *dst, const char *src)
+{
+    while ((*dst++ = *src++));
+}
 
-    // Skip leading delimiters
-    char* start = next;
-    while (*start && strchr(delim, *start))
-        start++;
+char *strncpy(char *dst, const char *src, size_t n)
+{
+    char *ret = dst;
+    while (n && *src) { *dst++ = *src++; n--; }
+    while (n--)        *dst++ = '\0';
+    return ret;
+}
 
-    if (*start == '\0')  // no more tokens
-    {
-        next = NULL;
-        return NULL;
+void strcat(char *dst, const char *src)
+{
+    dst += strlen(dst);
+    while ((*dst++ = *src++));
+}
+
+char *strncat(char *dst, const char *src, size_t n)
+{
+    char *ret = dst;
+    dst += strlen(dst);
+    while (n && *src) { *dst++ = *src++; n--; }
+    *dst = '\0';
+    return ret;
+}
+
+char *strdup(const char *s)
+{
+    size_t len = strlen(s) + 1;
+    char  *buf = malloc(len);
+    if (buf)
+        memcpy(buf, s, len);
+    return buf;
+}
+
+char *strchr(const char *s, int c)
+{
+    while (*s) {
+        if (*s == (char)c) return (char *)s;
+        s++;
     }
+    return (c == '\0') ? (char *)s : NULL;
+}
 
-    // Find the end of this token
-    char* end = start;
-    while (*end && !strchr(delim, *end))
-        end++;
+char *strtok(char *str, const char *delim)
+{
+    static char *saved = NULL;
+    if (str) saved = str;
+    if (!saved || !*saved) return NULL;
 
-    if (*end)
-    {
-        *end = '\0';  // terminate token
-        next = end + 1;
-    }
-    else
-    {
-        next = NULL;  // last token
-    }
+    while (*saved && strchr(delim, *saved)) saved++;
+    if (!*saved) return NULL;
+
+    char *start = saved;
+    while (*saved && !strchr(delim, *saved)) saved++;
+    if (*saved) *saved++ = '\0';
 
     return start;
 }
 
-char* strchr(const char* s, int c)
+void *memcpy(void *dest, const void *src, size_t n)
 {
-    while (*s)
-    {
-        if (*s == (char)c)
-            return (char*)s;
-        s++;
-    }
-    return NULL;
+    uint8_t       *d = dest;
+    const uint8_t *s = src;
+    while (n--) *d++ = *s++;
+    return dest;
 }
 
-
-int strncmp(const char* s1, const char* s2, size_t n)
+void *memset(void *dest, int c, size_t n)
 {
-    for (size_t i = 0; i < n; i++)
-    {
-        unsigned char c1 = (unsigned char)s1[i];
-        unsigned char c2 = (unsigned char)s2[i];
+    uint8_t *d = dest;
+    while (n--) *d++ = (uint8_t)c;
+    return dest;
+}
 
-        if (c1 != c2)
-            return c1 - c2;
-
-        if (c1 == '\0')
-            return 0;
+void *memmove(void *dest, const void *src, size_t n)
+{
+    uint8_t       *d = dest;
+    const uint8_t *s = src;
+    if (d < s) {
+        while (n--) *d++ = *s++;
+    } else if (d > s) {
+        d += n; s += n;
+        while (n--) *--d = *--s;
     }
+    return dest;
+}
 
+int memcmp(const void *a, const void *b, size_t n)
+{
+    const uint8_t *pa = a, *pb = b;
+    while (n--) {
+        if (*pa != *pb) return *pa - *pb;
+        pa++; pb++;
+    }
     return 0;
-}
-
-void* memcpy(void* dest, const void* src, size_t n)
-{
-    uint8_t*       d = (uint8_t*)dest;
-    const uint8_t* s = (const uint8_t*)src;
-
-    while (n && ((uintptr_t)d & 7)) {
-        *d++ = *s++;
-        n--;
-    }
-
-    uint64_t*       dw = (uint64_t*)d;
-    const uint64_t* sw = (const uint64_t*)s;
-
-    while (n >= 8) {
-        *dw++ = *sw++;
-        n -= 8;
-    }
-
-    d = (uint8_t*)dw;
-    s = (const uint8_t*)sw;
-
-    while (n--)
-        *d++ = *s++;
-
-    return dest;
-}
-
-void* memset(void* dest, int c, size_t n)
-{
-    uint8_t* d = (uint8_t*)dest;
-
-    while (n && ((uintptr_t)d & 7)) {
-        *d++ = (uint8_t)c;
-        n--;
-    }
-
-    uint64_t  wide = (uint8_t)c;
-    wide |= wide << 8;
-    wide |= wide << 16;
-    wide |= wide << 32;
-
-    uint64_t* dw = (uint64_t*)d;
-    while (n >= 8) {
-        *dw++ = wide;
-        n -= 8;
-    }
-
-    d = (uint8_t*)dw;
-    while (n--)
-        *d++ = (uint8_t)c;
-
-    return dest;
 }

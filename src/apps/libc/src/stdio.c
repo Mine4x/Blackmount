@@ -173,3 +173,24 @@ void scanf(const char* fmt, ...)
 
     va_end(args);
 }
+
+char *fgets(char *buf, int size, int fd)
+{
+    if (!buf || size <= 0)
+        return NULL;
+
+    int n = read(fd, buf, size - 1);
+    if (n <= 0)
+        return NULL;
+
+    buf[n] = '\0';
+
+    for (int i = 0; i < n; i++) {
+        if (buf[i] == '\n') {
+            buf[i + 1] = '\0';
+            break;
+        }
+    }
+
+    return buf;
+}

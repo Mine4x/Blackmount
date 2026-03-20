@@ -38,15 +38,17 @@ static char type_char(unsigned char type)
     }
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
-    int fd = open("/");
+    const char *path = argc > 1 ? argv[1] : "/";
+
+    int fd = open(path);
     if (fd < 0) {
-        printf("ls: failed to open /\n");
+        printf("ls: failed to open %s\n", path);
         return 1;
     }
 
-    char* buf = malloc(BUF_SIZE);
+    char *buf = malloc(BUF_SIZE);
     if (!buf) {
         printf("ls: out of memory\n");
         close(fd);
@@ -68,7 +70,7 @@ int main(void)
 
         long offset = 0;
         while (offset < nread) {
-            struct linux_dirent64* d = (struct linux_dirent64*)(buf + offset);
+            struct linux_dirent64 *d = (struct linux_dirent64 *)(buf + offset);
             printf("%c  %s\n", type_char(d->d_type), d->d_name);
             offset += d->d_reclen;
         }

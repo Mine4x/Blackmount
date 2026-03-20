@@ -732,21 +732,44 @@ int64_t proc_sbrk(int64_t increment)
     return (int64_t)old_brk;
 }
 
-static void push64_to_space(address_space_t *proc_space, uint64_t *sp, uint64_t val)
+static bool write_bytes_to_user(address_space_t *proc_space,
+                                 uint64_t dst, const void *src, size_t len)
 {
     address_space_t *kspace = vmm_get_kernel_space();
-    *sp -= 8;
-    uint64_t page_va  = *sp & ~(uint64_t)(PAGE_SIZE - 1);
-    size_t   page_off = *sp - page_va;
-    void *phys = vmm_get_physical(proc_space, (void *)page_va);
-    if (!phys) {
-        map_user_page(proc_space, page_va, NULL, 0);
-        phys = vmm_get_physical(proc_space, (void *)page_va);
+    const uint8_t   *s      = (const uint8_t *)src;
+
+    while (len > 0) {
+        uint64_t page_va  = dst & ~(uint64_t)(PAGE_SIZE - 1);
+        size_t   page_off = (size_t)(dst - page_va);
+        size_t   chunk    = PAGE_SIZE - page_off;
+        if (chunk > len) chunk = len;
+
+        void *phys = vmm_get_physical(proc_space, (void *)page_va);
+        if (!phys) {
+            if (!map_user_page(proc_space, page_va, NULL, 0))
+                return false;
+            phys = vmm_get_physical(proc_space, (void *)page_va);
+            if (!phys)
+                return false;
+        }
+
+        vmm_map(kspace, VMM_SCRATCH_VA, phys, VMM_KERNEL_PAGE);
+        memcpy((uint8_t *)VMM_SCRATCH_VA + page_off, s, chunk);
+        vmm_unmap(kspace, VMM_SCRATCH_VA);
+        vmm_invlpg(VMM_SCRATCH_VA);
+
+        dst += chunk;
+        s   += chunk;
+        len -= chunk;
     }
-    vmm_map(kspace, VMM_SCRATCH_VA, phys, VMM_KERNEL_PAGE);
-    memcpy((uint8_t *)VMM_SCRATCH_VA + page_off, &val, 8);
-    vmm_unmap(kspace, VMM_SCRATCH_VA);
-    vmm_invlpg(VMM_SCRATCH_VA);
+
+    return true;
+}
+
+static void push64_to_space(address_space_t *proc_space, uint64_t *sp, uint64_t val)
+{
+    *sp -= 8;
+    write_bytes_to_user(proc_space, *sp, &val, 8);
 }
 
 static uint64_t setup_user_stack_argv(address_space_t *proc_space,
@@ -754,52 +777,28 @@ static uint64_t setup_user_stack_argv(address_space_t *proc_space,
                                        int argc, const char **argv,
                                        int envc, const char **envp)
 {
-    address_space_t *kspace = vmm_get_kernel_space();
     uint64_t sp = (stack_top - 16) & ~0xFULL;
 
-    uint64_t env_ptrs[envc];
+    uint64_t *env_ptrs = (uint64_t *)kmalloc((envc + 1) * sizeof(uint64_t));
+    uint64_t *arg_ptrs = (uint64_t *)kmalloc((argc + 1) * sizeof(uint64_t));
+
+    if (!env_ptrs || !arg_ptrs) {
+        kfree(env_ptrs);
+        kfree(arg_ptrs);
+        return sp;
+    }
 
     for (int i = envc - 1; i >= 0; i--) {
         size_t len = strlen(envp[i]) + 1;
         sp -= len;
-
-        uint64_t page_va  = sp & ~(uint64_t)(PAGE_SIZE - 1);
-        size_t   page_off = sp - page_va;
-
-        void *phys = vmm_get_physical(proc_space, (void *)page_va);
-        if (!phys) {
-            map_user_page(proc_space, page_va, NULL, 0);
-            phys = vmm_get_physical(proc_space, (void *)page_va);
-        }
-
-        vmm_map(kspace, VMM_SCRATCH_VA, phys, VMM_KERNEL_PAGE);
-        memcpy((uint8_t *)VMM_SCRATCH_VA + page_off, envp[i], len);
-        vmm_unmap(kspace, VMM_SCRATCH_VA);
-        vmm_invlpg(VMM_SCRATCH_VA);
-
+        write_bytes_to_user(proc_space, sp, envp[i], len);
         env_ptrs[i] = sp;
     }
-
-    uint64_t arg_ptrs[argc];
 
     for (int i = argc - 1; i >= 0; i--) {
         size_t len = strlen(argv[i]) + 1;
         sp -= len;
-
-        uint64_t page_va  = sp & ~(uint64_t)(PAGE_SIZE - 1);
-        size_t   page_off = sp - page_va;
-
-        void *phys = vmm_get_physical(proc_space, (void *)page_va);
-        if (!phys) {
-            map_user_page(proc_space, page_va, NULL, 0);
-            phys = vmm_get_physical(proc_space, (void *)page_va);
-        }
-
-        vmm_map(kspace, VMM_SCRATCH_VA, phys, VMM_KERNEL_PAGE);
-        memcpy((uint8_t *)VMM_SCRATCH_VA + page_off, argv[i], len);
-        vmm_unmap(kspace, VMM_SCRATCH_VA);
-        vmm_invlpg(VMM_SCRATCH_VA);
-
+        write_bytes_to_user(proc_space, sp, argv[i], len);
         arg_ptrs[i] = sp;
     }
 
@@ -815,6 +814,8 @@ static uint64_t setup_user_stack_argv(address_space_t *proc_space,
 
     push64_to_space(proc_space, &sp, (uint64_t)argc);
 
+    kfree(env_ptrs);
+    kfree(arg_ptrs);
     return sp;
 }
 
@@ -864,8 +865,9 @@ int proc_create_user_image_argv(const uint8_t *image, size_t image_size,
         return -1;
     }
 
-    if (argc > 0 && argv)
-        initial_rsp = setup_user_stack_argv(proc_space, stack_top, argc, argv, envc, envp);
+    initial_rsp = setup_user_stack_argv(proc_space, stack_top,
+                                         argc, argv ? argv : (const char **)0,
+                                         envc, envp ? envp : (const char **)0);
 
     int pid = proc_create_internal(
         entry_vaddr, priority, parent, PROC_TYPE_USER,
@@ -880,8 +882,7 @@ int proc_create_user_image_argv(const uint8_t *image, size_t image_size,
     }
 
     __asm__ volatile("sti");
-    log_ok("PROC",
-           "Created user task PID %d | entry=0x%lx argc=%d",
-           pid, entry_vaddr, argc);
+    log_ok("PROC", "Created user task PID %d | entry=0x%lx argc=%d envc=%d",
+           pid, entry_vaddr, argc, envc);
     return pid;
 }

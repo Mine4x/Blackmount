@@ -14,12 +14,10 @@ typedef uint64_t Elf64_Xword;
 typedef uint8_t  Elf64_Byte;
 
 #define EI_NIDENT    16
-
 #define ELFMAG0      0x7Fu
 #define ELFMAG1      'E'
 #define ELFMAG2      'L'
 #define ELFMAG3      'F'
-
 #define ELFCLASS64   2
 #define ELFDATA2LSB  1
 #define ET_EXEC      2
@@ -66,46 +64,38 @@ static int elf_validate(const Elf64_Ehdr *ehdr)
         log_err("BIN", "Not an ELF file (bad magic)");
         return -1;
     }
-
     if (ehdr->e_ident[4] != ELFCLASS64) {
         log_err("BIN", "Not a 64-bit ELF (EI_CLASS=%d)", (int)ehdr->e_ident[4]);
         return -1;
     }
-
     if (ehdr->e_ident[5] != ELFDATA2LSB) {
         log_err("BIN", "Not a little-endian ELF (EI_DATA=%d)", (int)ehdr->e_ident[5]);
         return -1;
     }
-
     if (ehdr->e_type != ET_EXEC) {
         log_err("BIN", "Not an executable ELF (e_type=%d). "
                        "Link with -static and -no-pie.", (int)ehdr->e_type);
         return -1;
     }
-
     if (ehdr->e_machine != EM_X86_64) {
         log_err("BIN", "Wrong target ISA (e_machine=%d, expected %d for x86-64)",
                 (int)ehdr->e_machine, EM_X86_64);
         return -1;
     }
-
     if (ehdr->e_phnum == 0) {
         log_err("BIN", "No program headers in ELF");
         return -1;
     }
-
     if (ehdr->e_phentsize < sizeof(Elf64_Phdr)) {
         log_err("BIN", "Program header entry too small: %d < %d",
                 (int)ehdr->e_phentsize, (int)sizeof(Elf64_Phdr));
         return -1;
     }
-
     if (ehdr->e_phnum > BIN_MAX_PHDRS) {
         log_err("BIN", "Too many program headers: %d (limit %d)",
                 (int)ehdr->e_phnum, BIN_MAX_PHDRS);
         return -1;
     }
-
     return 0;
 }
 
@@ -115,75 +105,12 @@ static int elf_read_at(int fd, uint32_t file_offset, void *buf, size_t size)
         log_err("BIN", "VFS_Set_Pos(0x%x) failed", file_offset);
         return -1;
     }
-
     int got = VFS_Read(fd, size, buf);
     if (got < 0 || (size_t)got < size) {
         log_err("BIN", "Short read: wanted %d bytes at offset 0x%x, got %d",
                 (int)size, file_offset, got);
         return -1;
     }
-
-    return 0;
-}
-
-static int elf_load_segments(int fd, const Elf64_Ehdr *ehdr,
-                              uint8_t *flat_img, size_t flat_size,
-                              uint64_t load_base)
-{
-    for (int i = 0; i < ehdr->e_phnum; i++) {
-        const Elf64_Phdr *ph =
-            (const Elf64_Phdr *)((uint8_t *)flat_img +
-                                  (size_t)i * ehdr->e_phentsize - 
-                                  (size_t)(load_base));
-
-        const Elf64_Phdr *phdr = (const Elf64_Phdr *)
-            ((uint8_t *)flat_img - (ptrdiff_t)load_base +
-             (ptrdiff_t)(load_base + (size_t)i * ehdr->e_phentsize));
-
-        (void)ph; (void)phdr;
-    }
-    return 0;
-}
-
-static int elf_read_segments(int fd, const Elf64_Ehdr *ehdr,
-                              const uint8_t *phdrs,
-                              uint8_t *flat_img, size_t flat_size,
-                              uint64_t load_base)
-{
-    for (int i = 0; i < ehdr->e_phnum; i++) {
-        const Elf64_Phdr *ph =
-            (const Elf64_Phdr *)(phdrs + (size_t)i * ehdr->e_phentsize);
-
-        if (ph->p_type != PT_LOAD || ph->p_memsz == 0)
-            continue;
-
-        size_t buf_off = (size_t)(ph->p_vaddr - load_base);
-        if (buf_off + ph->p_memsz > flat_size) {
-            log_err("BIN", "Phdr %d: segment overflows flat image buffer", i);
-            return -1;
-        }
-
-        if (ph->p_filesz > 0) {
-            if (ph->p_offset > 0xFFFFFFFFu) {
-                log_err("BIN", "Phdr %d: p_offset 0x%lx exceeds 32-bit VFS limit",
-                        i, ph->p_offset);
-                return -1;
-            }
-
-            if (elf_read_at(fd, (uint32_t)ph->p_offset,
-                            flat_img + buf_off, (size_t)ph->p_filesz) < 0) {
-                log_err("BIN", "Failed to read segment %d data", i);
-                return -1;
-            }
-        }
-
-        log_info("BIN", "  Segment %d: vaddr=0x%lx  filesz=%lu  memsz=%lu%s",
-                 i, ph->p_vaddr,
-                 (unsigned long)ph->p_filesz,
-                 (unsigned long)ph->p_memsz,
-                 (ph->p_memsz > ph->p_filesz) ? "  (BSS tail zeroed)" : "");
-    }
-
     return 0;
 }
 
@@ -227,12 +154,52 @@ static int elf_parse_load_range(const uint8_t *phdrs, const Elf64_Ehdr *ehdr,
     return n_load;
 }
 
+static int elf_read_segments(int fd, const Elf64_Ehdr *ehdr,
+                              const uint8_t *phdrs,
+                              uint8_t *flat_img, size_t flat_size,
+                              uint64_t load_base)
+{
+    for (int i = 0; i < ehdr->e_phnum; i++) {
+        const Elf64_Phdr *ph =
+            (const Elf64_Phdr *)(phdrs + (size_t)i * ehdr->e_phentsize);
+
+        if (ph->p_type != PT_LOAD || ph->p_memsz == 0)
+            continue;
+
+        size_t buf_off = (size_t)(ph->p_vaddr - load_base);
+        if (buf_off + ph->p_memsz > flat_size) {
+            log_err("BIN", "Phdr %d: segment overflows flat image buffer", i);
+            return -1;
+        }
+
+        if (ph->p_filesz > 0) {
+            if (ph->p_offset > 0xFFFFFFFFu) {
+                log_err("BIN", "Phdr %d: p_offset 0x%lx exceeds 32-bit VFS limit",
+                        i, ph->p_offset);
+                return -1;
+            }
+            if (elf_read_at(fd, (uint32_t)ph->p_offset,
+                            flat_img + buf_off, (size_t)ph->p_filesz) < 0) {
+                log_err("BIN", "Failed to read segment %d data", i);
+                return -1;
+            }
+        }
+
+        log_info("BIN", "  Segment %d: vaddr=0x%lx  filesz=%lu  memsz=%lu%s",
+                 i, ph->p_vaddr,
+                 (unsigned long)ph->p_filesz,
+                 (unsigned long)ph->p_memsz,
+                 (ph->p_memsz > ph->p_filesz) ? "  (BSS tail zeroed)" : "");
+    }
+    return 0;
+}
+
 static int elf_open_and_load(const char *path,
                               uint8_t **out_flat_img, size_t *out_flat_size,
                               uint64_t *out_load_base, uint64_t *out_entry)
 {
-    int     ret       = -1;
-    uint8_t *phdrs    = NULL;
+    int     ret    = -1;
+    uint8_t *phdrs = NULL;
     uint8_t *flat_img = NULL;
 
     int fd = VFS_Open(path, true);
