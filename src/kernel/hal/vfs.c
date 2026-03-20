@@ -24,9 +24,9 @@ bool mounted = false;
 const char* special_paths[] = {"/dev/stdin", "/dev/stdout", "/dev/stderr", "/dev/stddbg"};
 const int sp_len = sizeof(special_paths) / sizeof(special_paths[0]);
 
-VFS_File_t *open_files;
+VFS_File_t* open_files;
 
-int get_value_by_key(const char *input, int key, char *out, size_t out_size)
+int get_value_by_key(const char* input, int key, char* out, size_t out_size)
 {
     if (!input || !out || out_size == 0)
         return -1;
@@ -64,7 +64,6 @@ static int check_path(const char* path)
         if (strcmp(path, special_paths[i]) == 0)
             return i;
     }
-
     return -1;
 }
 
@@ -98,16 +97,45 @@ int VFS_Open(const char* path, bool privileged)
     if (response != -1 && !privileged)
         return response;
 
+    ext2_inode_t inode;
+    if (ext2_stat(rootfs, path, &inode) == EXT2_SUCCESS &&
+        (inode.i_mode & 0xF000) == EXT2_S_IFDIR)
+    {
+        ext2_dir_iter_t* iter = ext2_opendir(rootfs, path);
+        if (!iter)
+            return -1;
+
+        for (int i = 0; i < MAX_OPEN_FILES; i++) {
+            if (!open_files[i].exists) {
+                open_files[i].path     = path;
+                open_files[i].file     = NULL;
+                open_files[i].dir_iter = iter;
+                open_files[i].is_dir   = true;
+                open_files[i].exists   = true;
+                open_files[i].is_dev   = false;
+                open_files[i].pid      = privileged ? -1 : proc_get_current_pid();
+                if (privileged)
+                    open_files[i].flags = KERNEL;
+                return i;
+            }
+        }
+
+        ext2_closedir(iter);
+        return -1;
+    }
+
     ext2_file_t* ext2_file = ext2_open(rootfs, path);
     if (!ext2_file)
         return -1;
 
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (!open_files[i].exists) {
-            open_files[i].path      = path;
-            open_files[i].file      = ext2_file;
-            open_files[i].exists    = true;
-            open_files[i].pid       = proc_get_current_pid();
+            open_files[i].path     = path;
+            open_files[i].file     = ext2_file;
+            open_files[i].dir_iter = NULL;
+            open_files[i].is_dir   = false;
+            open_files[i].exists   = true;
+            open_files[i].pid      = proc_get_current_pid();
 
             if (privileged) {
                 open_files[i].pid   = -1;
@@ -115,10 +143,9 @@ int VFS_Open(const char* path, bool privileged)
             }
 
             device_t* dev = device_get(path);
-            if (dev != NULL)
-            {
+            if (dev != NULL) {
                 open_files[i].is_dev = true;
-                open_files[i].dev = dev;
+                open_files[i].dev    = dev;
                 log_info("VFS", "is dev");
             }
 
@@ -130,19 +157,17 @@ int VFS_Open(const char* path, bool privileged)
     return -1;
 }
 
-int VFS_ioctl(int fd, uint64_t req, void *arg)
+int VFS_ioctl(int fd, uint64_t req, void* arg)
 {
     int pid = proc_get_current_pid();
 
     if (!open_files[fd].exists || !open_files[fd].is_dev || open_files[fd].pid != pid)
-    {
         return -1;
-    }
 
     return open_files[fd].dev->dispatch(pid, req, arg);
 }
 
-int VFS_Write(int fd, size_t count, void *buf, bool privileged)
+int VFS_Write(int fd, size_t count, void* buf, bool privileged)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
         return -1;
@@ -168,7 +193,7 @@ int VFS_Write(int fd, size_t count, void *buf, bool privileged)
     return result;
 }
 
-int VFS_Read(int fd, size_t count, void *buf)
+int VFS_Read(int fd, size_t count, void* buf)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
         return -1;
@@ -191,25 +216,92 @@ int VFS_Close(int fd, bool privileged)
     if (fd < 0 || fd >= MAX_OPEN_FILES)
         return -1;
 
-    if (open_files[fd].exists) {
-        if (!privileged && (open_files[fd].flags & KERNEL))
-            return -1;
-        if (!privileged && open_files[fd].pid != proc_get_current_pid())
-            return -1;
+    if (!open_files[fd].exists)
+        return -1;
 
-        if (open_files[fd].file) {
-            ext2_close(open_files[fd].file);
-            open_files[fd].file = NULL;
-        }
+    if (!privileged && (open_files[fd].flags & KERNEL))
+        return -1;
 
-        open_files[fd].exists = false;
-        return 0;
+    if (!privileged && open_files[fd].pid != proc_get_current_pid())
+        return -1;
+
+    if (open_files[fd].is_dir && open_files[fd].dir_iter) {
+        ext2_closedir(open_files[fd].dir_iter);
+        open_files[fd].dir_iter = NULL;
+    } else if (open_files[fd].file) {
+        ext2_close(open_files[fd].file);
+        open_files[fd].file = NULL;
     }
+
+    open_files[fd].exists = false;
+    open_files[fd].is_dir = false;
+    return 0;
+}
+
+int VFS_GetDents64(int fd, struct linux_dirent64* buf, size_t count)
+{
+    if (fd < 0 || fd >= MAX_OPEN_FILES)
+        return -1;
+
+    if (!open_files[fd].exists || !open_files[fd].is_dir || !open_files[fd].dir_iter)
+        return -1;
+
+    if (open_files[fd].pid != proc_get_current_pid())
+        return -1;
+
+    size_t written = 0;
+    uint8_t* ptr = (uint8_t*)buf;
+
+    while (written < count) {
+        vfs_dirent_t entry;
+
+        int result = ext2_readdir(open_files[fd].dir_iter, entry.name, &entry.inode, &entry.type);
+        if (result < 0)
+            break;
+
+        size_t namelen = strlen(entry.name);
+        size_t reclen  = sizeof(struct linux_dirent64) + namelen + 1;
+        reclen = (reclen + 7) & ~7;
+
+        if (written + reclen > count)
+            break;
+
+        struct linux_dirent64* d = (struct linux_dirent64*)ptr;
+        d->d_ino    = entry.inode;
+        d->d_off    = (int64_t)(written + reclen);
+        d->d_reclen = (unsigned short)reclen;
+        d->d_type   = entry.type;
+        memcpy(d->d_name, entry.name, namelen + 1);
+
+        ptr     += reclen;
+        written += reclen;
+    }
+
+    return (int)written;
+}
+
+int VFS_Set_Pos(int fd, uint32_t pos, bool privileged)
+{
+    if (fd < 0 || fd >= MAX_OPEN_FILES)
+        return -1;
+
+    if (!open_files[fd].exists || !open_files[fd].file)
+        return -1;
+
+    if (!privileged && (open_files[fd].flags & KERNEL) && !(open_files[fd].flags & USER_WRITE))
+        return -1;
+
+    if (!privileged && open_files[fd].pid != proc_get_current_pid())
+        return -1;
+
+    int result = ext2_seek(open_files[fd].file, pos, EXT2_SEEK_SET);
+    if (result == EXT2_SUCCESS)
+        return 0;
 
     return -1;
 }
 
-static void create_special_files()
+static void create_special_files(void)
 {
     VFS_Create("/dev", true);
 
@@ -240,8 +332,10 @@ void VFS_Init(void)
     open_files = kmalloc(MAX_OPEN_FILES * sizeof(VFS_File_t));
 
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
-        open_files[i].exists = false;
-        open_files[i].file   = NULL;
+        open_files[i].exists   = false;
+        open_files[i].file     = NULL;
+        open_files[i].dir_iter = NULL;
+        open_files[i].is_dir   = false;
     }
 
     const char* rd = config_get("bootdisk", "iso");
@@ -294,28 +388,6 @@ void VFS_Unmount(void)
 {
     if (mounted)
         ext2_unmount(rootfs);
-}
-
-int VFS_Set_Pos(int fd, uint32_t pos, bool privileged)
-{
-    if (fd < 0 || fd >= MAX_OPEN_FILES)
-        return -1;
-
-    if (open_files[fd].exists &&
-        open_files[fd].file) {
-        if (!privileged && (open_files[fd].flags & KERNEL) && !(open_files[fd].flags & USER_WRITE))
-            return -1;
-        if (!privileged && open_files[fd].pid != proc_get_current_pid())
-            return -1;
-
-        int result = ext2_seek(open_files[fd].file, pos, EXT2_SEEK_SET);
-        if (result == EXT2_SUCCESS)
-            return 0;
-
-        return -1;
-    }
-
-    return -1;
 }
 
 int VFS_Write_old(fd_t file, uint8_t* data, size_t size)

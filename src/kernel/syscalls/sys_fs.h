@@ -54,3 +54,8 @@ uint64_t sys_ioctl(uint64_t fd, uint64_t req, uint64_t arg)
 {
     return VFS_ioctl((int)fd, req, (void*)arg);
 }
+
+uint64_t sys_getdents64(uint64_t fd, uint64_t buf, uint64_t size)
+{
+    return VFS_GetDents64(fd, (struct linux_dirent64*)buf, (size_t)size);
+}
