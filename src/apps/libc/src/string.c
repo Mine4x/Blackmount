@@ -118,3 +118,30 @@ int strncmp(const char* s1, const char* s2, size_t n)
 
     return 0;
 }
+
+void* memcpy(void* dest, const void* src, size_t n)
+{
+    uint8_t*       d = (uint8_t*)dest;
+    const uint8_t* s = (const uint8_t*)src;
+
+    while (n && ((uintptr_t)d & 7)) {
+        *d++ = *s++;
+        n--;
+    }
+
+    uint64_t*       dw = (uint64_t*)d;
+    const uint64_t* sw = (const uint64_t*)s;
+
+    while (n >= 8) {
+        *dw++ = *sw++;
+        n -= 8;
+    }
+
+    d = (uint8_t*)dw;
+    s = (const uint8_t*)sw;
+
+    while (n--)
+        *d++ = *s++;
+
+    return dest;
+}
