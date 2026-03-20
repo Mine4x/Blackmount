@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 #define SYSCALL_READ 0
 #define SYSCALL_WRITE 1
@@ -14,6 +15,7 @@
 #define SYSCALL_EXIT 60
 #define SYSCALL_BINRUN 301
 #define SYSCALL_WAIT 302
+#define SYSCALL_CREATE 303
 
 /*
  * Calls a syscall with 6 arguments
@@ -69,8 +71,20 @@ uint64_t brk(uint64_t addr);
  */
 uint64_t ioctl(int fd, uint64_t req, void *arg);
 
+/*
+ * Executes a binary as a child with args and envs and returns the pid
+ */
 uint64_t execve(const char *path, const char **argv, const char **envp);
 
+/*
+ * Executes a binary as a child with args and returns the pid
+ */
 uint64_t execv(const char *path, const char **argv);
+
+/*
+ * Creates a file or a directory
+ */
+uint64_t create(const char *path, bool is_dir);
+
 
 #endif

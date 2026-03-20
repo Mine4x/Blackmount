@@ -194,3 +194,68 @@ char *fgets(char *buf, int size, int fd)
 
     return buf;
 }
+
+int itoa(int value, char *buf)
+{
+    char tmp[32];
+    int i = 0, j = 0, neg = 0;
+
+    if (value == 0) {
+        buf[0] = '0';
+        buf[1] = '\0';
+        return 1;
+    }
+
+    if (value < 0) {
+        neg = 1;
+        value = -value;
+    }
+
+    while (value > 0) {
+        tmp[i++] = '0' + (value % 10);
+        value /= 10;
+    }
+
+    if (neg)
+        tmp[i++] = '-';
+
+    while (i > 0)
+        buf[j++] = tmp[--i];
+
+    buf[j] = '\0';
+    return j;
+}
+
+int snprintf(char *out, int size, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+
+    int pos = 0;
+
+    for (const char *p = fmt; *p && pos < size - 1; p++) {
+        if (*p != '%') {
+            out[pos++] = *p;
+            continue;
+        }
+
+        p++;
+
+        if (*p == 's') {
+            const char *s = va_arg(args, const char *);
+            while (*s && pos < size - 1)
+                out[pos++] = *s++;
+        } else if (*p == 'd') {
+            char buf[32];
+            itoa(va_arg(args, int), buf);
+            for (char *b = buf; *b && pos < size - 1; b++)
+                out[pos++] = *b;
+        } else {
+            out[pos++] = *p;
+        }
+    }
+
+    out[pos] = '\0';
+    va_end(args);
+    return pos;
+}

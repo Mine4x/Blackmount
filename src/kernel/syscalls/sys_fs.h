@@ -59,3 +59,8 @@ uint64_t sys_getdents64(uint64_t fd, uint64_t buf, uint64_t size)
 {
     return VFS_GetDents64(fd, (struct linux_dirent64*)buf, (size_t)size);
 }
+
+uint64_t sys_create(uint64_t path, uint64_t is_dir)
+{
+    return VFS_Create((const char*)path, is_dir);
+}

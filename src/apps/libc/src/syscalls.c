@@ -146,3 +146,13 @@ uint64_t execv(const char *path, const char **argv)
 {
     return execve(path, argv, NULL);
 }
+
+uint64_t create(const char *path, bool is_dir)
+{
+    return syscall6(
+        SYSCALL_CREATE,
+        (uint64_t)path,
+        (uint64_t)is_dir,
+        0, 0, 0, 0
+    );
+}

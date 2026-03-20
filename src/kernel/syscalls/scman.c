@@ -55,4 +55,5 @@ void register_syscalls()
     x86_64_Syscall_RegisterHandler(217, (SyscallHandler)sys_getdents64);
     x86_64_Syscall_RegisterHandler(301, (SyscallHandler)load_bin);
     x86_64_Syscall_RegisterHandler(302, (SyscallHandler)proc_wait_pid);
+    x86_64_Syscall_RegisterHandler(303, (SyscallHandler)sys_create);
 }

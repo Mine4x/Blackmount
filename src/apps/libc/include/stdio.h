@@ -19,4 +19,7 @@ void printf(const char* fmt, ...);
 char *fgets(char *buf, int size, int fd);
 void scanf(const char* fmt, ...);
 
+int itoa(int value, char *buf);
+int snprintf(char *out, int size, const char *fmt, ...);
+
 #endif
