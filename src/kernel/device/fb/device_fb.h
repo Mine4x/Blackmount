@@ -2,7 +2,7 @@
 #define DEV_FB_H
 
 #include <stdint.h>
-#include "device.h"
+#include <device/device.h>
 
 #define FB_GET_INFO 1
 

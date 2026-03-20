@@ -55,5 +55,7 @@ device_t* fb_device_init(const char* path)
     dev->path = path;
     dev->dispatch = &dispatcher;
 
+    device_register(dev);
+
     return dev;
 }
