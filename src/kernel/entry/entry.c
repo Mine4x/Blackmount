@@ -29,6 +29,8 @@
 #include <drivers/usb/xhci/xhci.h>
 #include <drivers/usb/xhci/hid_keyboard.h>
 #include <loaders/bin_loader.h>
+#include <device/device.h>
+#include <console/console.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -77,6 +79,10 @@ void kmain(void)
     log_ok("Boot", "Initialized Heap");
     ok("Initialized Heap");
 
+    device_init();
+    log_ok("Boot", "Initialized Device list");
+    ok("Initialized Device list");
+
     dma_init();
     log_ok("boot", "Initialized DMA Allocator");
     ok("Initialized DMA Allocator");
@@ -122,6 +128,9 @@ void kmain(void)
     VFS_Init();
     log_ok("Boot", "Initialized VFS");
     ok("Initialized VFS");
+
+    fb_make_dev();
+    console_make_dev();
 
     proc_init();
     log_ok("Boot", "Initialized Multitasking");
