@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <drivers/fs/ext/ext2.h>
+#include <device/device.h>
 
 typedef int fd_t;
 
@@ -24,6 +25,9 @@ typedef struct {
     file_flags_t flags;
     int pid;
     bool exists;
+
+    device_t* dev;
+    bool is_dev;
 } VFS_File_t;
 
 

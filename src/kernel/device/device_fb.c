@@ -2,6 +2,7 @@
 #include <fb/framebuffer.h>
 #include <heap.h>
 #include <proc/proc.h>
+#include <hal/vfs.h>
 
 static int get_info(int pid, void* arg)
 {
@@ -44,6 +45,9 @@ static int dispatcher(int pid, uint64_t req, void *arg)
 
 device_t* fb_device_init(const char* path)
 {
+    if (VFS_Create(path, false) < 0)
+        return NULL;
+
     device_t* dev = kmalloc(sizeof(device_t));
 
     if (!dev) return NULL;
