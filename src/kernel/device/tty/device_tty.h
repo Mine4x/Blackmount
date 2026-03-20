@@ -3,14 +3,22 @@
 
 #define TTY_CLEAR 1
 #define TTY_COLOR 2
+#define TTY_SPECIAL_READ 3
 
 #include <stdint.h>
+#include <stddef.h>
 
 typedef struct
 {
     uint32_t fg;
     uint32_t bg;
 } tty_color_t;
+
+typedef struct
+{
+    size_t count;
+    char* buf;
+} read_special_event_t;
 
 
 #include <device/device.h>

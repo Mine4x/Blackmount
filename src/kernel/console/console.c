@@ -10,9 +10,52 @@ vector waitingProcesses;
 static uint32_t fg_color = 0xFFFFFF;
 static uint32_t bg_color = 0x000000;
 
+static char c_current_key;
+
 static bool c_escape_mode = false;
 static char c_escape_buf[26];
 static int  c_escape_pos  = 0;
+
+static uint64_t c_special_buf[26];
+static int c_special_buf_pos = 0;
+
+void console_add_special_char(uint64_t sc)
+{
+    if (c_special_buf_pos > 26)
+        return;
+    
+    c_special_buf[c_escape_pos] = sc;
+    c_escape_pos++;
+}
+
+void console_reset_special_char()
+{
+    c_special_buf_pos == 0;
+
+    for (int i = 0; i < 26; i++)
+    {
+        c_special_buf[i] = 0;
+    }
+}
+
+void console_read_special_char(char* buf, size_t count)
+{
+    int written = 0;
+    for (int i = 0; i < 26 && i < count; i++)
+    {
+        buf[i] = c_special_buf[i];
+    }
+}
+
+void console_set_current_c(char c)
+{
+    c_current_key = c;
+}
+
+char console_get_current_c()
+{
+    return c_current_key;
+}
 
 void console_clear_text()
 {
@@ -154,6 +197,18 @@ void console_backspace(void)
     tr_backspace();
     tr_backspace();
     draw_cursor();
+}
+
+void console_backspace_no_input(void)
+{
+    tr_backspace();
+    tr_backspace();
+    draw_cursor();
+}
+
+void console_backspace_no_dispaly(void)
+{
+    console_rmchar();
 }
 
 bool console_init(void)

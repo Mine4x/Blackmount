@@ -42,23 +42,23 @@ static void input_keyboard_binding(char c)
 static void hid_keyboard_loop() {
     if (hid_keyboard_key_available()) {
         uint16_t key = hid_keyboard_read_key();
-        if (key == HID_SPECIAL_KEY_NONE) return;
+        if (key == HID_SPECIAL_KEY_NONE) {return; console_reset_special_char();}
 
         switch (key) {
-            case HID_SPECIAL_KEY_UP:        printf("<UP>");    return;
-            case HID_SPECIAL_KEY_DOWN:      printf("<DOWN>");  return;
-            case HID_SPECIAL_KEY_LEFT:      printf("<LEFT>");  return;
-            case HID_SPECIAL_KEY_RIGHT:     printf("<RIGHT>"); return;
+            case HID_SPECIAL_KEY_UP:        printf("<UP>"); console_add_special_char(key);    return;
+            case HID_SPECIAL_KEY_DOWN:      printf("<DOWN>"); console_add_special_char(key);  return;
+            case HID_SPECIAL_KEY_LEFT:      printf("<LEFT>"); console_add_special_char(key);  return;
+            case HID_SPECIAL_KEY_RIGHT:     printf("<RIGHT>"); console_add_special_char(key); return;
             case HID_SPECIAL_KEY_F1 ... HID_SPECIAL_KEY_F12:
-                printf("<F%d>", key - HID_SPECIAL_KEY_F1 + 1); return;
-            case HID_SPECIAL_KEY_HOME:      printf("<HOME>");  return;
-            case HID_SPECIAL_KEY_END:       printf("<END>");   return;
-            case HID_SPECIAL_KEY_PAGE_UP:   printf("<PGUP>");  return;
-            case HID_SPECIAL_KEY_PAGE_DOWN: printf("<PGDN>");  return;
-            case HID_SPECIAL_KEY_INSERT:    printf("<INS>");   return;
-            case HID_SPECIAL_KEY_DELETE:    printf("<DEL>");   return;
-            case HID_SPECIAL_KEY_CAPS_LOCK: printf("<CAPS>");  return;
-            default:                        input_keyboard_binding((char)key);
+                printf("<F%d>", key - HID_SPECIAL_KEY_F1 + 1); console_add_special_char(key); return;
+            case HID_SPECIAL_KEY_HOME:      printf("<HOME>"); console_add_special_char(key);  return;
+            case HID_SPECIAL_KEY_END:       printf("<END>"); console_add_special_char(key);   return;
+            case HID_SPECIAL_KEY_PAGE_UP:   printf("<PGUP>"); console_add_special_char(key);  return;
+            case HID_SPECIAL_KEY_PAGE_DOWN: printf("<PGDN>"); console_add_special_char(key);  return;
+            case HID_SPECIAL_KEY_INSERT:    printf("<INS>"); console_add_special_char(key);   return;
+            case HID_SPECIAL_KEY_DELETE:    printf("<DEL>"); console_add_special_char(key);   return;
+            case HID_SPECIAL_KEY_CAPS_LOCK: printf("<CAPS>"); console_add_special_char(key);  return;
+            default:                        input_keyboard_binding((char)key); console_set_current_c((char)key);
         }
     }
 }

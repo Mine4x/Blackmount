@@ -36,6 +36,14 @@ static void draw_cursor(void);
 void console_clear_text();
 void console_make_dev();
 
+void console_backspace_no_input(void);
+char console_get_current_c();
+void console_set_current_c(char c);
+void console_reset_special_char();
+void console_add_special_char(uint64_t sc);
+void console_backspace_no_dispaly(void);
+void console_read_special_char(char* buf, size_t count);
+
 static bool copy_to_user(void* user_ptr, const void* kernel_src, size_t n);
 bool console_init(void);
 void console_free(void);

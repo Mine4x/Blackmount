@@ -15,6 +15,9 @@
 #include <panic/panic.h>
 #include <proc/proc.h>
 #include <console/console.h>
+#include <device/device.h>
+#include <device/stdin/device_stdin.h>
+#include <device/stdout/device_stdout.h>
 
 block_device_t* rootdrive;
 ext2_fs_t*      rootfs;
@@ -305,10 +308,8 @@ static void create_special_files(void)
 {
     VFS_Create("/dev", true);
 
-    if (VFS_Create("/dev/stdin", false) < 0)
-        log_err("VFS", "Failed to create special file 2\n This could just be becuase it already exists");
-    if (VFS_Create("/dev/stdout", false) < 0)
-        log_err("VFS", "Failed to create special file 3\n This could just be becuase it already exists");
+    stdin_device_init("/dev/stdin");
+    stdout_device_init("/dev/stdout");
     if (VFS_Create("/dev/stderr", false) < 0)
         log_err("VFS", "Failed to create special file 4\n This could just be becuase it already exists");
     if (VFS_Create("/dev/stddbg", false) < 0)
