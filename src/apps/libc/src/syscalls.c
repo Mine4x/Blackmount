@@ -117,3 +117,16 @@ uint64_t brk(uint64_t addr)
 {
     return syscall6(SYSCALL_BRK, addr, 0, 0, 0, 0, 0);
 }
+
+uint64_t ioctl(int fd, uint64_t req, void *arg)
+{
+    return syscall6(
+        SYSCALL_IOCTL,
+        (uint64_t)fd,
+        req,
+        (uint64_t)arg,
+        0,
+        0,
+        0
+    );
+}
