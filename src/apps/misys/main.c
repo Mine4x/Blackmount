@@ -11,14 +11,6 @@
 #define SYS_GETDENTS64 217
 #define BUF_SIZE       4096
 
-struct linux_dirent64 {
-    uint64_t       d_ino;
-    int64_t        d_off;
-    unsigned short d_reclen;
-    unsigned char  d_type;
-    char           d_name[];
-} __attribute__((packed));
-
 #define EXT2_FT_REG_FILE 1
 
 typedef parse_respond (*parse_fn)(const char*);

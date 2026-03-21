@@ -6,6 +6,7 @@
 #include <memory.h>
 #include <mem/vmm.h>
 #include <mem/pmm.h>
+#include <heap.h>
 #include <debug.h>
 
 typedef struct {
@@ -25,13 +26,17 @@ typedef struct {
 
     uint64_t heap_start;
     uint64_t heap_end;
+
+    int  vfork_parent;
+    char cwd[256];
 } PCB;
 
-static PCB      proc_table[MAX_PROCESSES];
-static int      current_proc        = -1;
-static uint32_t next_pid            = 1;
-static int      scheduling_enabled  = 0;
-static uint64_t next_user_code_addr = USER_CODE_BASE;
+static PCB       proc_table[MAX_PROCESSES];
+static int       current_proc           = -1;
+static uint32_t  next_pid               = 1;
+static int       scheduling_enabled     = 0;
+static uint64_t  next_user_code_addr    = USER_CODE_BASE;
+static Registers *current_syscall_frame = NULL;
 
 extern void enter_usermode(uint64_t entry, uint64_t stack);
 extern void resume_kernel_context(Registers *ctx);
@@ -46,7 +51,7 @@ static inline address_space_t *pcb_space(const PCB *pcb)
 static int proc_find_index(int pid)
 {
     for (int i = 0; i < MAX_PROCESSES; i++)
-        if (proc_table[i].proc.PID == pid)
+        if (proc_table[i].proc.PID == (uint32_t)pid)
             return i;
     return -1;
 }
@@ -105,17 +110,26 @@ static void proc_terminate(int index, uint64_t exit_code)
 
     log_info("PROC", "Terminating PID %d", pid);
 
-    pcb->proc.ExitCode = exit_code;
+    pcb->proc.ExitCode = (uint32_t)exit_code;
     pcb->state = PROC_ZOMBIE;
 
     proc_kill_children(pid);
 
+    if (pcb->vfork_parent > 0) {
+        int vidx = proc_find_index(pcb->vfork_parent);
+        if (vidx >= 0 && proc_table[vidx].state == PROC_BLOCKED) {
+            proc_table[vidx].proc.WaitingFor = (uint32_t)-1;
+            proc_table[vidx].state = PROC_READY;
+        }
+        pcb->address_space = NULL;
+        pcb->vfork_parent  = -1;
+    }
+
     int parent_idx = proc_find_index(pcb->proc.PPID);
     if (parent_idx >= 0) {
         PCB *parent = &proc_table[parent_idx];
-
-        if (parent->proc.WaitingFor == pid) {
-            parent->proc.WaitingFor = -1;
+        if (parent->proc.WaitingFor == (uint32_t)pid) {
+            parent->proc.WaitingFor = (uint32_t)-1;
             proc_unblock(parent->proc.PID);
         }
     }
@@ -224,8 +238,8 @@ bool proc_write_to_user(int pid, void *user_dst, const void *src, size_t n)
     size_t           remaining = n;
 
     while (remaining > 0) {
-        size_t page_off    = (uintptr_t)udst & (PAGE_SIZE - 1);
-        size_t chunk       = PAGE_SIZE - page_off;
+        size_t page_off = (uintptr_t)udst & (PAGE_SIZE - 1);
+        size_t chunk    = PAGE_SIZE - page_off;
         if (chunk > remaining)
             chunk = remaining;
 
@@ -233,8 +247,7 @@ bool proc_write_to_user(int pid, void *user_dst, const void *src, size_t n)
 
         void *phys = vmm_get_physical(proc_space, page_va);
         if (!phys) {
-            log_err("PROC",
-                    "proc_write_to_user: pid %d VA 0x%lx not mapped",
+            log_err("PROC", "proc_write_to_user: pid %d VA 0x%lx not mapped",
                     pid, (uint64_t)page_va);
             return false;
         }
@@ -306,13 +319,21 @@ static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t pare
     memset(pcb, 0, sizeof(PCB));
 
     pcb->proc.PID        = next_pid++;
-    pcb->proc.WaitingFor = -1;
+    pcb->proc.WaitingFor = (uint32_t)-1;
     pcb->proc.PPID       = parent;
     pcb->proc.Priority   = priority;
     pcb->proc.Type       = type;
     pcb->proc.Owner      = owner;
+    pcb->proc.EUID       = owner;
+    pcb->proc.SavedUID   = owner;
+    pcb->proc.Group      = user_get_gid(owner);
+    pcb->proc.EGroup     = pcb->proc.Group;
+    pcb->proc.SavedGID   = pcb->proc.Group;
     pcb->state           = PROC_READY;
     pcb->address_space   = address_space;
+    pcb->vfork_parent    = -1;
+    pcb->cwd[0] = '/';
+    pcb->cwd[1] = '\0';
 
     uint64_t kstack_top = (uint64_t)(pcb->kernel_stack + PROC_STACK_SIZE) & ~0xFULL;
     pcb->kernel_stack_top = kstack_top;
@@ -341,7 +362,7 @@ static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t pare
         pcb->heap_end   = pcb->heap_start;
     }
 
-    return pcb->proc.PID;
+    return (int)pcb->proc.PID;
 }
 
 void proc_yield(void)
@@ -357,10 +378,11 @@ void proc_exit_syscall(void)  { proc_table[current_proc].proc.Type = PROC_TYPE_U
 void proc_init(void)
 {
     memset(proc_table, 0, sizeof(proc_table));
-    current_proc        = -1;
-    next_pid            = 1;
-    scheduling_enabled  = 0;
-    next_user_code_addr = USER_CODE_BASE;
+    current_proc            = -1;
+    next_pid                = 1;
+    scheduling_enabled      = 0;
+    next_user_code_addr     = USER_CODE_BASE;
+    current_syscall_frame   = NULL;
     proc_create_kernel(idle, 0, 0);
 }
 
@@ -410,7 +432,7 @@ int proc_create_user(void (*entry)(void), void (*end_marker)(void),
         return -1;
     }
 
-    size_t code_size  = (uint64_t)end_marker - (uint64_t)entry;
+    size_t code_size = (uint64_t)end_marker - (uint64_t)entry;
 
     if (code_size == 0 || code_size > (USER_CODE_LIMIT - USER_CODE_BASE)) {
         __asm__ volatile("sti");
@@ -512,8 +534,7 @@ int proc_create_user_image(const uint8_t *image, size_t image_size,
     for (size_t off = 0; off < alloc_size; off += PAGE_SIZE) {
         const uint8_t *src      = (off < image_size) ? (image + off) : NULL;
         size_t         copy_len = (off < image_size)
-            ? ((image_size - off < PAGE_SIZE) ? (image_size - off) : PAGE_SIZE)
-            : 0;
+            ? ((image_size - off < PAGE_SIZE) ? (image_size - off) : PAGE_SIZE) : 0;
 
         if (!map_user_page(proc_space, load_vaddr + off, src, copy_len)) {
             vmm_destroy_address_space(proc_space);
@@ -553,7 +574,7 @@ int proc_create_user_image(const uint8_t *image, size_t image_size,
 
 uint64_t proc_wait_pid(uint64_t pid)
 {
-    int child_idx = proc_find_index(pid);
+    int child_idx = proc_find_index((int)pid);
     if (child_idx < 0)
         return (uint64_t)-1;
 
@@ -566,12 +587,12 @@ uint64_t proc_wait_pid(uint64_t pid)
             return (uint64_t)-1;
 
         PCB *parent = &proc_table[parent_idx];
-        parent->proc.WaitingFor = pid;
+        parent->proc.WaitingFor = (uint32_t)pid;
         parent->state = PROC_BLOCKED;
 
         proc_yield();
 
-        child_idx = proc_find_index(pid);
+        child_idx = proc_find_index((int)pid);
         if (child_idx < 0)
             return (uint64_t)-1;
         child = &proc_table[child_idx];
@@ -646,7 +667,6 @@ void proc_schedule_interrupt(Registers *frame)
     proc_table[next].state = PROC_RUNNING;
 
     x86_64_TSS_SetKernelStack(proc_table[next].kernel_stack_top);
-
     vmm_switch_space(pcb_space(&proc_table[next]));
 
     *frame = proc_table[next].context;
@@ -662,7 +682,7 @@ int proc_get_current_pid(void)
 {
     if (current_proc < 0)
         return -1;
-    return proc_table[current_proc].proc.PID;
+    return (int)proc_table[current_proc].proc.PID;
 }
 
 uint64_t proc_brk(uint64_t new_brk)
@@ -681,8 +701,8 @@ uint64_t proc_brk(uint64_t new_brk)
         return (uint64_t)-1;
 
     uint64_t old_end  = pcb->heap_end;
-    uint64_t old_page = (old_end  + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
-    uint64_t new_page = (new_brk  + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+    uint64_t old_page = (old_end + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+    uint64_t new_page = (new_brk + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
 
     if (new_brk > old_end) {
         for (uint64_t va = old_page; va < new_page; va += PAGE_SIZE) {
@@ -889,6 +909,7 @@ int proc_create_user_image_argv(const uint8_t *image, size_t image_size,
            pid, entry_vaddr, argc, envc);
     return pid;
 }
+
 static bool proc_can_act(uid_t actor, int pid)
 {
     if (!user_exists(actor))
@@ -944,7 +965,6 @@ int proc_block_as(uid_t actor, int pid)
 {
     if (!proc_can_act(actor, pid))
         return -1;
-
     proc_block(pid);
     return 0;
 }
@@ -953,7 +973,6 @@ int proc_unblock_as(uid_t actor, int pid)
 {
     if (!proc_can_act(actor, pid))
         return -1;
-
     proc_unblock(pid);
     return 0;
 }
@@ -962,7 +981,6 @@ uint64_t proc_wait_pid_as(uid_t actor, uint64_t pid)
 {
     if (!proc_can_act(actor, (int)pid))
         return (uint64_t)-1;
-
     return proc_wait_pid(pid);
 }
 
@@ -971,7 +989,6 @@ int proc_create_kernel_as(uid_t owner, void (*entry)(void),
 {
     if (!user_exists(owner))
         return -1;
-
     return proc_create_internal((uint64_t)entry, priority, parent,
                                 PROC_TYPE_KERNEL, 0, 0, 0, 0, 0, NULL, owner);
 }
@@ -1106,4 +1123,423 @@ int proc_create_user_image_as(uid_t owner, const uint8_t *image, size_t image_si
     log_ok("PROC", "Created user task PID %d owner=%d | entry=0x%lx",
            pid, owner, entry_vaddr);
     return pid;
+}
+
+static bool clone_user_region(address_space_t *dst, address_space_t *src,
+                               uint64_t va_start, uint64_t va_end)
+{
+    address_space_t *kspace = vmm_get_kernel_space();
+
+    uint8_t *page_buf = (uint8_t *)kmalloc(PAGE_SIZE);
+    if (!page_buf)
+        return false;
+
+    for (uint64_t va = va_start; va < va_end; va += PAGE_SIZE) {
+        void *phys_src = vmm_get_physical(src, (void *)va);
+        if (!phys_src)
+            continue;
+
+        if (!vmm_map(kspace, VMM_SCRATCH_VA, phys_src, VMM_KERNEL_PAGE)) {
+            kfree(page_buf);
+            return false;
+        }
+
+        memcpy(page_buf, VMM_SCRATCH_VA, PAGE_SIZE);
+        vmm_unmap(kspace, VMM_SCRATCH_VA);
+        vmm_invlpg(VMM_SCRATCH_VA);
+
+        if (!map_user_page(dst, va, page_buf, PAGE_SIZE)) {
+            kfree(page_buf);
+            return false;
+        }
+    }
+
+    kfree(page_buf);
+    return true;
+}
+
+static void pcb_copy_layout(PCB *dst, const PCB *src)
+{
+    dst->code_vaddr_start = src->code_vaddr_start;
+    dst->code_vaddr_end   = src->code_vaddr_end;
+    dst->stack_vaddr_base = src->stack_vaddr_base;
+    dst->stack_vaddr_top  = src->stack_vaddr_top;
+    dst->heap_start       = src->heap_start;
+    dst->heap_end         = src->heap_end;
+}
+
+static int pcb_alloc_slot(void)
+{
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (proc_table[i].state == PROC_UNUSED)
+            return i;
+    }
+    return -1;
+}
+
+static void pcb_init_child(PCB *child, const PCB *parent,
+                            address_space_t *space, const Registers *frame)
+{
+    memset(child, 0, offsetof(PCB, kernel_stack));
+
+    child->proc.PID        = next_pid++;
+    child->proc.PPID       = parent->proc.PID;
+    child->proc.Priority   = parent->proc.Priority;
+    child->proc.WaitingFor = (uint32_t)-1;
+    child->proc.Type       = parent->proc.Type;
+    child->proc.Owner      = parent->proc.Owner;
+    child->proc.EUID       = parent->proc.EUID;
+    child->proc.SavedUID   = parent->proc.SavedUID;
+    child->proc.Group      = parent->proc.Group;
+    child->proc.EGroup     = parent->proc.EGroup;
+    child->proc.SavedGID   = parent->proc.SavedGID;
+    child->state           = PROC_READY;
+    child->address_space   = space;
+    child->vfork_parent    = -1;
+
+    child->kernel_stack_top =
+        (uint64_t)(child->kernel_stack + PROC_STACK_SIZE) & ~0xFULL;
+
+    child->context     = *frame;
+    child->context.rax = 0;
+
+    memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
+    pcb_copy_layout(child, parent);
+}
+
+int proc_fork(Registers *frame)
+{
+    __asm__ volatile("cli");
+
+    if (current_proc < 0) { __asm__ volatile("sti"); return -1; }
+
+    PCB *parent = &proc_table[current_proc];
+
+    int slot = pcb_alloc_slot();
+    if (slot < 0) { __asm__ volatile("sti"); return -1; }
+
+    address_space_t *child_space = NULL;
+
+    if (parent->address_space) {
+        child_space = vmm_create_address_space();
+        if (!child_space) { __asm__ volatile("sti"); return -1; }
+
+        uint64_t code_end_pg =
+            (parent->code_vaddr_end + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+        uint64_t heap_end_pg =
+            (parent->heap_end + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+
+        bool ok = true;
+
+        if (parent->code_vaddr_start < code_end_pg)
+            ok &= clone_user_region(child_space, parent->address_space,
+                                    parent->code_vaddr_start, code_end_pg);
+
+        if (ok && parent->stack_vaddr_base < parent->stack_vaddr_top)
+            ok &= clone_user_region(child_space, parent->address_space,
+                                    parent->stack_vaddr_base, parent->stack_vaddr_top);
+
+        if (ok && parent->heap_start < heap_end_pg)
+            ok &= clone_user_region(child_space, parent->address_space,
+                                    parent->heap_start, heap_end_pg);
+
+        if (!ok) {
+            vmm_destroy_address_space(child_space);
+            __asm__ volatile("sti");
+            return -1;
+        }
+    }
+
+    PCB *child = &proc_table[slot];
+    pcb_init_child(child, parent, child_space, frame);
+
+    int child_pid = (int)child->proc.PID;
+    __asm__ volatile("sti");
+    log_ok("PROC", "fork: PID %d -> child PID %d", parent->proc.PID, child_pid);
+    return child_pid;
+}
+
+int proc_vfork(Registers *frame)
+{
+    __asm__ volatile("cli");
+
+    if (current_proc < 0) { __asm__ volatile("sti"); return -1; }
+
+    PCB *parent = &proc_table[current_proc];
+
+    int slot = pcb_alloc_slot();
+    if (slot < 0) { __asm__ volatile("sti"); return -1; }
+
+    PCB *child = &proc_table[slot];
+    pcb_init_child(child, parent, parent->address_space, frame);
+    child->vfork_parent = (int)parent->proc.PID;
+
+    parent->context         = *frame;
+    parent->context.rax     = (uint64_t)child->proc.PID;
+    parent->state           = PROC_BLOCKED;
+    parent->proc.WaitingFor = child->proc.PID;
+
+    int child_pid = (int)child->proc.PID;
+    __asm__ volatile("sti");
+    log_ok("PROC", "vfork: PID %d -> child PID %d (parent blocked)",
+           parent->proc.PID, child_pid);
+    return child_pid;
+}
+
+int proc_clone(Registers *frame, uint64_t flags, uint64_t child_stack)
+{
+    if (flags & CLONE_VFORK) {
+        int pid = proc_vfork(frame);
+        if (pid > 0 && child_stack) {
+            int idx = proc_find_index(pid);
+            if (idx >= 0)
+                proc_table[idx].context.rsp = child_stack;
+        }
+        return pid;
+    }
+
+    if (flags & CLONE_VM) {
+        __asm__ volatile("cli");
+
+        if (current_proc < 0) { __asm__ volatile("sti"); return -1; }
+
+        PCB *parent = &proc_table[current_proc];
+
+        int slot = pcb_alloc_slot();
+        if (slot < 0) { __asm__ volatile("sti"); return -1; }
+
+        PCB *child = &proc_table[slot];
+        pcb_init_child(child, parent, parent->address_space, frame);
+
+        if (child_stack)
+            child->context.rsp = child_stack;
+
+        int child_pid = (int)child->proc.PID;
+        __asm__ volatile("sti");
+        log_ok("PROC", "clone(CLONE_VM): PID %d -> child PID %d",
+               parent->proc.PID, child_pid);
+        return child_pid;
+    }
+
+    int fork_pid = proc_fork(frame);
+    if (fork_pid > 0 && child_stack) {
+        int idx = proc_find_index(fork_pid);
+        if (idx >= 0)
+            proc_table[idx].context.rsp = child_stack;
+    }
+    return fork_pid;
+}
+
+void proc_set_syscall_frame(Registers *frame)
+{
+    current_syscall_frame = frame;
+}
+
+Registers *proc_get_syscall_frame(void)
+{
+    return current_syscall_frame;
+}
+
+int proc_getppid(void)
+{
+    if (current_proc < 0)
+        return -1;
+    return (int)proc_table[current_proc].proc.PPID;
+}
+
+uid_t proc_getuid(void)
+{
+    if (current_proc < 0) return (uid_t)-1;
+    return proc_table[current_proc].proc.Owner;
+}
+
+uid_t proc_geteuid(void)
+{
+    if (current_proc < 0) return (uid_t)-1;
+    return proc_table[current_proc].proc.EUID;
+}
+
+int proc_setuid(uid_t uid)
+{
+    if (current_proc < 0) return -1;
+    PCB *pcb = &proc_table[current_proc];
+    if (user_is_root(pcb->proc.EUID)) {
+        pcb->proc.Owner    = uid;
+        pcb->proc.EUID     = uid;
+        pcb->proc.SavedUID = uid;
+        return 0;
+    }
+    if (uid == pcb->proc.Owner || uid == pcb->proc.SavedUID) {
+        pcb->proc.EUID = uid;
+        return 0;
+    }
+    return -1;
+}
+
+int proc_seteuid(uid_t uid)
+{
+    if (current_proc < 0) return -1;
+    PCB *pcb = &proc_table[current_proc];
+    if (user_is_root(pcb->proc.EUID)) {
+        pcb->proc.EUID = uid;
+        return 0;
+    }
+    if (uid == pcb->proc.Owner || uid == pcb->proc.SavedUID) {
+        pcb->proc.EUID = uid;
+        return 0;
+    }
+    return -1;
+}
+
+int proc_setreuid(uid_t ruid, uid_t euid)
+{
+    if (current_proc < 0) return -1;
+    PCB  *pcb     = &proc_table[current_proc];
+    bool  root    = user_is_root(pcb->proc.EUID);
+    uid_t old_r   = pcb->proc.Owner;
+
+    if (ruid != (uid_t)-1) {
+        if (!root && ruid != pcb->proc.Owner && ruid != pcb->proc.EUID)
+            return -1;
+        pcb->proc.Owner = ruid;
+    }
+    if (euid != (uid_t)-1) {
+        if (!root && euid != old_r && euid != pcb->proc.EUID && euid != pcb->proc.SavedUID)
+            return -1;
+        pcb->proc.EUID = euid;
+    }
+    if (ruid != (uid_t)-1 || (euid != (uid_t)-1 && euid != old_r))
+        pcb->proc.SavedUID = pcb->proc.EUID;
+    return 0;
+}
+
+int proc_apply_setuid_exec(uid_t file_owner, uint16_t file_mode)
+{
+    if (current_proc < 0) return -1;
+    PCB *pcb = &proc_table[current_proc];
+    if (file_mode & 0x0800) {
+        pcb->proc.SavedUID = file_owner;
+        pcb->proc.EUID     = file_owner;
+    }
+    return 0;
+}
+
+gid_t proc_getgid(void)
+{
+    if (current_proc < 0) return (gid_t)-1;
+    return proc_table[current_proc].proc.Group;
+}
+
+gid_t proc_getegid(void)
+{
+    if (current_proc < 0) return (gid_t)-1;
+    return proc_table[current_proc].proc.EGroup;
+}
+
+int proc_setgid(gid_t gid)
+{
+    if (current_proc < 0) return -1;
+    PCB *pcb = &proc_table[current_proc];
+    if (user_is_root(pcb->proc.EUID)) {
+        pcb->proc.Group    = gid;
+        pcb->proc.EGroup   = gid;
+        pcb->proc.SavedGID = gid;
+        return 0;
+    }
+    if (gid == pcb->proc.Group || gid == pcb->proc.SavedGID) {
+        pcb->proc.EGroup = gid;
+        return 0;
+    }
+    return -1;
+}
+
+int proc_setegid(gid_t gid)
+{
+    if (current_proc < 0) return -1;
+    PCB *pcb = &proc_table[current_proc];
+    if (user_is_root(pcb->proc.EUID)) {
+        pcb->proc.EGroup = gid;
+        return 0;
+    }
+    if (gid == pcb->proc.Group || gid == pcb->proc.SavedGID) {
+        pcb->proc.EGroup = gid;
+        return 0;
+    }
+    return -1;
+}
+
+int proc_setregid(gid_t rgid, gid_t egid)
+{
+    if (current_proc < 0) return -1;
+    PCB  *pcb   = &proc_table[current_proc];
+    bool  root  = user_is_root(pcb->proc.EUID);
+    gid_t old_r = pcb->proc.Group;
+
+    if (rgid != (gid_t)-1) {
+        if (!root && rgid != pcb->proc.Group && rgid != pcb->proc.EGroup)
+            return -1;
+        pcb->proc.Group = rgid;
+    }
+    if (egid != (gid_t)-1) {
+        if (!root && egid != old_r && egid != pcb->proc.EGroup && egid != pcb->proc.SavedGID)
+            return -1;
+        pcb->proc.EGroup = egid;
+    }
+    if (rgid != (gid_t)-1 || (egid != (gid_t)-1 && egid != old_r))
+        pcb->proc.SavedGID = pcb->proc.EGroup;
+    return 0;
+}
+
+int proc_setresgid(gid_t rgid, gid_t egid, gid_t sgid)
+{
+    if (current_proc < 0) return -1;
+    PCB  *pcb  = &proc_table[current_proc];
+    bool  root = user_is_root(pcb->proc.EUID);
+
+    if (!root) {
+        gid_t r = pcb->proc.Group;
+        gid_t e = pcb->proc.EGroup;
+        gid_t s = pcb->proc.SavedGID;
+        if (rgid != (gid_t)-1 && rgid != r && rgid != e && rgid != s) return -1;
+        if (egid != (gid_t)-1 && egid != r && egid != e && egid != s) return -1;
+        if (sgid != (gid_t)-1 && sgid != r && sgid != e && sgid != s) return -1;
+    }
+
+    if (rgid != (gid_t)-1) pcb->proc.Group    = rgid;
+    if (egid != (gid_t)-1) pcb->proc.EGroup   = egid;
+    if (sgid != (gid_t)-1) pcb->proc.SavedGID = sgid;
+    return 0;
+}
+
+int proc_getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid)
+{
+    if (current_proc < 0) return -1;
+    PCB *pcb = &proc_table[current_proc];
+    if (rgid) *rgid = pcb->proc.Group;
+    if (egid) *egid = pcb->proc.EGroup;
+    if (sgid) *sgid = pcb->proc.SavedGID;
+    return 0;
+}
+
+int proc_getcwd(char *buf, size_t size)
+{
+    if (!buf || size == 0 || current_proc < 0)
+        return -1;
+    const char *cwd = proc_table[current_proc].cwd;
+    size_t len = strlen(cwd);
+    if (len + 1 > size)
+        return -1;
+    memcpy(buf, cwd, len + 1);
+    return 0;
+}
+
+int proc_chdir(const char *path)
+{
+    if (!path || current_proc < 0)
+        return -1;
+    size_t len = strlen(path);
+    if (len >= sizeof(proc_table[0].cwd))
+        return -1;
+    memcpy(proc_table[current_proc].cwd, path, len + 1);
+    return 0;
 }

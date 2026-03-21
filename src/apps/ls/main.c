@@ -17,14 +17,6 @@
 #define EXT2_FT_SOCK     6
 #define EXT2_FT_SYMLINK  7
 
-struct linux_dirent64 {
-    uint64_t       d_ino;
-    int64_t        d_off;
-    unsigned short d_reclen;
-    unsigned char  d_type;
-    char           d_name[];
-} __attribute__((packed));
-
 static char type_char(unsigned char type)
 {
     switch (type) {
