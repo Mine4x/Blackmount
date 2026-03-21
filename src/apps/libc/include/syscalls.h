@@ -76,6 +76,7 @@
 #define SYSCALL_BINRUN      301
 #define SYSCALL_WAIT        302
 #define SYSCALL_CREATE      303
+#define SYSCALL_AUTHU       304
 
 /* =========================================================================
  * Supporting types
@@ -265,6 +266,7 @@ int          seteuid(unsigned int uid);
 int          setreuid(unsigned int ruid, unsigned int euid);
 int          setresuid(unsigned int ruid, unsigned int euid, unsigned int suid);
 int          getresuid(unsigned int *ruid, unsigned int *euid, unsigned int *suid);
+int          user_authenticate(const char* username, const char* password);
 
 /* =========================================================================
  * Identity — gid

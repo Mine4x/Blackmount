@@ -262,6 +262,14 @@ uint64_t sys_uname(uint64_t buf_ptr)
     return 0;
 }
 
+uint64_t sys_authu(uint64_t username, uint64_t password)
+{
+    if (!username || !password)
+        return SYSCALL_ERR(EFAULT);
+    
+    user_authenticate((const char*)username, (const char*)password);
+}
+
 uint64_t sys_getcwd(uint64_t buf_ptr, uint64_t size)
 {
     if (!buf_ptr || size == 0)

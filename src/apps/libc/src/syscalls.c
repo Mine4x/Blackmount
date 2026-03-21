@@ -358,3 +358,8 @@ int getresgid(unsigned int *rgid, unsigned int *egid, unsigned int *sgid)
 {
     return (int)syscall6(SYSCALL_GETRESGID, (uint64_t)rgid, (uint64_t)egid, (uint64_t)sgid, 0, 0, 0);
 }
+
+int user_authenticate(const char* username, const char* password)
+{
+    return (int)syscall6(SYSCALL_AUTHU, (uint64_t)username, (uint64_t)password, 0 ,0,0,0);
+}

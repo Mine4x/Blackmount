@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <string.h>
 #include <drivers/fs/ext/ext2.h>
+#include <hal/vfs.h>
 
 group_t* groups;
 user_t*  users;
@@ -213,13 +214,15 @@ int user_init(void)
         return -1;
     }
 
-    uid_t rootU = user_create_user_full("root", rootG, "/root", "/bin/sh");
+    uid_t rootU = user_create_user_full("root", rootG, "/root", "/bin/mountshell");
     if (rootU < 0) {
         log_err(USER_MOD, "Unable to create root user");
         kfree(users);
         kfree(groups);
         return -1;
     }
+
+    user_set_password(rootU, "bmroot");
 
     return 0;
 }
@@ -267,7 +270,7 @@ uid_t user_create_user_full(const char* name, gid_t gid,
     users[i].password_hash[0] = '\0';
 
     u_strlcpy(users[i].home,  home  ? home  : "/",       USER_HOME_LEN);
-    u_strlcpy(users[i].shell, shell ? shell : "/bin/sh", USER_SHELL_LEN);
+    u_strlcpy(users[i].shell, shell ? shell : "/bin/mountshell", USER_SHELL_LEN);
 
     return i;
 }
@@ -276,7 +279,11 @@ uid_t user_create_user(const char* name, gid_t gid)
 {
     char home[USER_HOME_LEN];
     u_fmt(home, USER_HOME_LEN, "/home/%s", name);
-    return user_create_user_full(name, gid, home, "/bin/sh");
+
+    VFS_Create("/home", true);
+    VFS_Create(home, true);
+
+    return user_create_user_full(name, gid, home, "/bin/mountshell");
 }
 
 bool user_check_perms(uid_t reqU, uid_t recU)
@@ -406,15 +413,15 @@ uid_t user_authenticate(const char* username, const char* password)
 
     uid_t uid = user_find_by_name(username);
     if (uid < 0)
-        return -1;
+        return -2;
 
     const char* stored = users[uid].password_hash;
 
     if (stored[0] == '\0' || stored[0] == '!')
-        return -1;
+        return -3;
 
     if (u_strncmp(stored, "$sha256$", 8) != 0)
-        return -1;
+        return -4;
 
     const char* salt_hex = stored + 8;
     const char* hash_hex = salt_hex + 17;
@@ -426,7 +433,7 @@ uid_t user_authenticate(const char* username, const char* password)
     size_t   plen  = strlen(password);
     uint8_t* input = kmalloc(8 + plen);
     if (!input)
-        return -1;
+        return -5;
 
     memcpy(input, salt, 8);
     memcpy(input + 8, password, plen);
@@ -444,7 +451,7 @@ uid_t user_authenticate(const char* username, const char* password)
     computed[64] = '\0';
 
     if (u_strncmp(computed, hash_hex, 64) != 0)
-        return -1;
+        return -6;
 
     return uid;
 }

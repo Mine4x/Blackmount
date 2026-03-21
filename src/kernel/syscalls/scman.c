@@ -6,6 +6,7 @@
 #include <debug.h>
 #include <hal/vfs.h>
 #include <shutdown/shutdown.h>
+#include <user/user.h>
 #include <loaders/bin_loader.h>
 
 uint64_t load_bin(uint64_t path, uint64_t priority)
@@ -86,4 +87,5 @@ void register_syscalls(void)
     x86_64_Syscall_RegisterHandler(301, (SyscallHandler)load_bin);
     x86_64_Syscall_RegisterHandler(302, (SyscallHandler)proc_wait_pid);
     x86_64_Syscall_RegisterHandler(303, (SyscallHandler)sys_create);
+    x86_64_Syscall_RegisterHandler(304, (SyscallHandler)sys_authu);
 }

@@ -57,3 +57,5 @@ uint64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot,
                   uint64_t flags, uint64_t fd, uint64_t offset);
 uint64_t sys_munmap(uint64_t addr, uint64_t length);
 uint64_t sys_mprotect(uint64_t addr, uint64_t length, uint64_t prot);
+
+uint64_t sys_authu(uint64_t username, uint64_t password);
