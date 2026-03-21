@@ -142,3 +142,92 @@ void* acpi_find_table(const char* signature) {
     log_warn("ACPI", "Table %.4s not found", signature);
     return NULL;
 }
+
+
+static inline void io_wait() {
+    __asm__ volatile ("outb %%al, $0x80" : : "a"(0));
+}
+
+
+void acpi_debug_shutdown_info() {
+    struct FADT_t* fadt = (struct FADT_t*)acpi_find_table("FACP");
+    if (!fadt) {
+        log_debug("ACPI", "FADT table not found");
+        return;
+    }
+
+    log_debug("ACPI", "PM1aCntBlk: 0x%X", (uint16_t)fadt->PM1aCntBlk);
+    log_debug("ACPI", "PM1bCntBlk: 0x%X", (uint16_t)fadt->PM1bCntBlk);
+    log_debug("ACPI", "PM1aEvtBlk: 0x%X", (uint16_t)fadt->PM1aEvtBlk);
+    log_debug("ACPI", "PM1bEvtBlk: 0x%X", (uint16_t)fadt->PM1bEvtBlk);
+    log_debug("ACPI", "SmiCmd port: 0x%X", fadt->SmiCmd);
+    log_debug("ACPI", "AcpiEnable value: 0x%X", fadt->AcpiEnable);
+
+    uint16_t s5_type = S5_SLEEP_TYPE;
+    log_debug("ACPI", "S5 sleep type: 0x%X", s5_type);
+
+    if (fadt->AcpiEnable)
+        log_debug("ACPI", "ACPI enable required before shutdown");
+    else
+        log_debug("ACPI", "ACPI already enabled");
+}
+
+static uint8_t s5_slp_typa = 0, s5_slp_typb = 0;
+
+static int acpi_parse_s5(void) {
+    struct ACPISDTHeader* dsdt_hdr = NULL;
+    struct FADT_t* fadt = (struct FADT_t*)acpi_find_table("FACP");
+    if (!fadt) return 0;
+
+    uint64_t dsdt_phys = fadt->Dsdt;
+    dsdt_hdr = (struct ACPISDTHeader*)(dsdt_phys + hhdm);
+
+    if (memcmp(dsdt_hdr->Signature, "DSDT", 4) != 0) return 0;
+
+    uint8_t* aml   = (uint8_t*)dsdt_hdr + sizeof(struct ACPISDTHeader);
+    uint32_t len   = dsdt_hdr->Length   - sizeof(struct ACPISDTHeader);
+
+    for (uint32_t i = 0; i < len - 8; i++) {
+        if (memcmp(&aml[i], "_S5_", 4) != 0) continue;
+
+        uint8_t* p = &aml[i + 4];
+        if (p[0] != 0x12) continue;
+        p += 2;
+        p++;
+        if (p[0] == 0x0A) { s5_slp_typa = p[1]; p += 2; }
+        if (p[0] == 0x0A) { s5_slp_typb = p[1]; }
+
+        log_ok("ACPI", "_S5_: SLP_TYPa=0x%X SLP_TYPb=0x%X",
+               s5_slp_typa, s5_slp_typb);
+        return 1;
+    }
+    return 0;
+}
+
+void acpi_shutdown() {
+    struct FADT_t* fadt = (struct FADT_t*)acpi_find_table("FACP");
+    if (!fadt) return;
+
+    if (fadt->SmiCmd && fadt->AcpiEnable) {
+        __asm__ volatile ("outb %0, %1" :: "a"(fadt->AcpiEnable), "Nd"((uint16_t)fadt->SmiCmd));
+        uint16_t pm1a_evt = (uint16_t)fadt->PM1aEvtBlk;
+        for (int i = 0; i < 300; i++) {
+            uint16_t val;
+            __asm__ volatile ("inw %1, %0" : "=a"(val) : "Nd"(pm1a_evt));
+            if (val & 1) break;
+            io_wait();
+        }
+    }
+
+    uint16_t pm1a = (uint16_t)fadt->PM1aCntBlk;
+    uint16_t pm1b = (uint16_t)fadt->PM1bCntBlk;
+
+    uint16_t val_a = ((uint16_t)s5_slp_typa << 10) | SLP_EN;
+    uint16_t val_b = ((uint16_t)s5_slp_typb << 10) | SLP_EN;
+
+    __asm__ volatile ("outw %0, %1" :: "a"(val_a), "Nd"(pm1a));
+    if (pm1b)
+        __asm__ volatile ("outw %0, %1" :: "a"(val_b), "Nd"(pm1b));
+
+    while (1) __asm__ volatile ("hlt");
+}

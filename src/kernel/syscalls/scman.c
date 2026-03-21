@@ -3,6 +3,7 @@
 #include <arch/x86_64/syscalls.h>
 #include <proc/proc.h>
 #include <debug.h>
+#include <shutdown/shutdown.h>
 #include <loaders/bin_loader.h>
 
 /*
@@ -50,6 +51,7 @@ void register_syscalls()
     x86_64_Syscall_RegisterHandler(12,  (SyscallHandler)proc_brk);
     x86_64_Syscall_RegisterHandler(16,  (SyscallHandler)sys_ioctl);
     x86_64_Syscall_RegisterHandler(24,  (SyscallHandler)proc_yield);
+    x86_64_Syscall_RegisterHandler(48,  (SyscallHandler)shutdown);
     x86_64_Syscall_RegisterHandler(59,  (SyscallHandler)sys_execve);
     x86_64_Syscall_RegisterHandler(60,  (SyscallHandler)proc_exit);
     x86_64_Syscall_RegisterHandler(217, (SyscallHandler)sys_getdents64);
