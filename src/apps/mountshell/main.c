@@ -157,6 +157,16 @@ static void handle_cd(char *input)
 
     build_path(newpath, pwd ? pwd : "/", argv[1]);
 
+    int fd = open(newpath);
+
+    if (fd < 0)
+    {
+        printf("cd: no such path\n");
+        return;
+    }
+
+    close(fd);
+
     set_env("OLDPWD", pwd ? pwd : "/");
     set_env("PWD", newpath);
 }
