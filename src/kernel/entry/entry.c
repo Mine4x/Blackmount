@@ -136,6 +136,8 @@ void kmain(void)
     log_ok("Boot", "Initialized VFS");
     ok("Initialized VFS");
 
+    user_load_from_disk();
+
     fb_make_dev();
     console_make_dev();
 
