@@ -138,8 +138,6 @@ void kmain(void)
 
     VFS_Create("/root", true);
     user_load_from_disk();
-    user_create_user("tib", 0);
-    user_set_password(1, "1");
     user_save_to_disk();
 
     fb_make_dev();
