@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <syscalls.h>
 
+#include <pathutil.h>
+
 #define BUF_SIZE 4096
 
 static int cat_file(const char *path)
@@ -36,9 +38,14 @@ int main(int argc, char **argv, char **envp)
         return 1;
     }
 
+    const char *pwd  = getenv_local("PWD",  envp);
+    const char *home = getenv_local("HOME", envp);
+
     int ret = 0;
     for (int i = 1; i < argc; i++) {
-        if (cat_file(argv[i]) < 0)
+        char resolved[PATH_SIZE];
+        build_path(resolved, pwd ? pwd : "/", argv[i], home);
+        if (cat_file(resolved) < 0)
             ret = 1;
     }
 
