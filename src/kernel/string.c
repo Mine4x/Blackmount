@@ -1,4 +1,5 @@
 #include "string.h"
+#include <heap.h>
 
 size_t str_len(const char* s) {
     size_t i = 0;
@@ -83,4 +84,16 @@ char *strncpy(char *dest, const char *src, size_t n) {
     }
 
     return dest;
+}
+
+char *strdup(const char *s) {
+    if (s == NULL) return NULL;
+
+    size_t len = strlen(s) + 1; // +1 for null terminator
+    char *dup = kmalloc(len);
+
+    if (dup == NULL) return NULL;
+
+    memcpy(dup, s, len);
+    return dup;
 }

@@ -9,5 +9,6 @@ int strcmp(const char* a, const char* b);
 char* strstr(const char* haystack, const char* needle);
 char *strchr(const char *s, int c);
 char *strncpy(char *dest, const char *src, size_t n);
+char *strdup(const char *s);
 
 #endif

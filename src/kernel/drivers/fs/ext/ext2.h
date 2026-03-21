@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <user/user.h>
 
 // Forward declarations
 typedef struct block_device block_device_t;
@@ -21,6 +22,7 @@ typedef struct ext2_file ext2_file_t;
 #define EXT2_ERROR_IS_DIR     -8
 #define EXT2_ERROR_NOT_DIR    -9
 #define EXT2_ERROR_NOT_EMPTY  -10
+#define EXT2_ERROR_PERM       -11  // Operation not permitted
 
 // EXT2 magic number
 #define EXT2_SUPER_MAGIC      0xEF53
@@ -43,6 +45,26 @@ typedef struct ext2_file ext2_file_t;
 #define EXT2_S_IFDIR          0x4000
 #define EXT2_S_IFCHR          0x2000
 #define EXT2_S_IFIFO          0x1000
+
+// Permission bits (lower 12 bits of i_mode)
+#define EXT2_S_ISUID          0x0800   // Set-user-ID on execute
+#define EXT2_S_ISGID          0x0400   // Set-group-ID on execute
+#define EXT2_S_ISVTX          0x0200   // Sticky bit
+
+#define EXT2_S_IRUSR          0x0100   // Owner: read
+#define EXT2_S_IWUSR          0x0080   // Owner: write
+#define EXT2_S_IXUSR          0x0040   // Owner: execute
+#define EXT2_S_IRGRP          0x0020   // Group: read
+#define EXT2_S_IWGRP          0x0010   // Group: write
+#define EXT2_S_IXGRP          0x0008   // Group: execute
+#define EXT2_S_IROTH          0x0004   // Other: read
+#define EXT2_S_IWOTH          0x0002   // Other: write
+#define EXT2_S_IXOTH          0x0001   // Other: execute
+
+// Mask covering all permission + special bits (lower 12 bits)
+#define EXT2_S_PERM_MASK      0x0FFF
+// Mask covering only the rwxrwxrwx bits (lower 9 bits)
+#define EXT2_S_RWXMASK        0x01FF
 
 // Special inodes
 #define EXT2_BAD_INO          1
@@ -230,5 +252,40 @@ int ext2_closedir(ext2_dir_iter_t* iter);
 // Utility functions
 int ext2_stat(ext2_fs_t* fs, const char* path, ext2_inode_t* inode);
 bool ext2_exists(ext2_fs_t* fs, const char* path);
+
+// Permission operations
+//   ext2_get_mode  - returns the full i_mode field (file-type bits + permission bits),
+//                    or 0 on error.  Use EXT2_S_PERM_MASK to isolate permission bits.
+//   ext2_chmod     - replaces the permission bits (EXT2_S_PERM_MASK) of the inode while
+//                    leaving the file-type bits untouched.  `mode` should contain only
+//                    the lower 12 bits (e.g. 0755, EXT2_S_IRUSR|EXT2_S_IWUSR, …).
+uint16_t ext2_get_mode(ext2_fs_t* fs, const char* path);
+int      ext2_chmod(ext2_fs_t* fs, const char* path, uint16_t mode);
+
+// Ownership operations
+//   ext2_get_owner - fills *uid and *gid from the inode; either pointer may be NULL.
+//   ext2_chown     - updates uid and/or gid; pass (uint16_t)-1 to leave a field unchanged.
+int ext2_get_owner(ext2_fs_t* fs, const char* path, uint16_t* uid, uint16_t* gid);
+int ext2_chown(ext2_fs_t* fs, const char* path, uint16_t uid, uint16_t gid);
+
+// User-system-aware permission layer
+//
+//   ext2_access   - checks whether `uid` may access the file with the requested
+//                   operations.  `mask` is a bitwise-OR of ACCESS_READ, ACCESS_WRITE,
+//                   and/or ACCESS_EXEC.  Root bypasses all checks.
+//                   Returns EXT2_SUCCESS or EXT2_ERROR_PERM.
+//
+//   ext2_chmod_as - like ext2_chmod but enforces that `requesting_uid` is either
+//                   the file owner or root.  Returns EXT2_ERROR_PERM otherwise.
+//
+//   ext2_chown_as - like ext2_chown but enforces that `requesting_uid` is root.
+//                   Returns EXT2_ERROR_PERM otherwise.
+#define ACCESS_READ  4
+#define ACCESS_WRITE 2
+#define ACCESS_EXEC  1
+
+int ext2_access(ext2_fs_t* fs, const char* path, uid_t requesting_uid, int mask);
+int ext2_chmod_as(ext2_fs_t* fs, const char* path, uid_t requesting_uid, uint16_t mode);
+int ext2_chown_as(ext2_fs_t* fs, const char* path, uid_t requesting_uid, uint16_t new_uid, uint16_t new_gid);
 
 #endif // EXT2_H
