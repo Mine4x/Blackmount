@@ -1,4 +1,5 @@
 #include "proc.h"
+#include <user/user.h>
 #include <string.h>
 #include <arch/x86_64/isr.h>
 #include <arch/x86_64/gdt.h>
@@ -291,7 +292,8 @@ static int user_map_stack(address_space_t *proc_space,
 static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t parent,
                                 ProcType type, uint64_t code_start, uint64_t code_end,
                                 uint64_t stack_base, uint64_t stack_top,
-                                uint64_t initial_rsp, address_space_t *address_space)
+                                uint64_t initial_rsp, address_space_t *address_space,
+                                uid_t owner)
 {
     int slot = -1;
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -308,6 +310,7 @@ static int proc_create_internal(uint64_t entry, uint32_t priority, uint32_t pare
     pcb->proc.PPID       = parent;
     pcb->proc.Priority   = priority;
     pcb->proc.Type       = type;
+    pcb->proc.Owner      = owner;
     pcb->state           = PROC_READY;
     pcb->address_space   = address_space;
 
@@ -393,7 +396,7 @@ void proc_start_scheduling(void)
 int proc_create_kernel(void (*entry)(void), uint32_t priority, uint32_t parent)
 {
     return proc_create_internal((uint64_t)entry, priority, parent,
-                                PROC_TYPE_KERNEL, 0, 0, 0, 0, 0, NULL);
+                                PROC_TYPE_KERNEL, 0, 0, 0, 0, 0, NULL, UID_ROOT);
 }
 
 int proc_create_user(void (*entry)(void), void (*end_marker)(void),
@@ -450,7 +453,7 @@ int proc_create_user(void (*entry)(void), void (*end_marker)(void),
     int pid = proc_create_internal(
         user_code_va, priority, parent, PROC_TYPE_USER,
         user_code_va, user_code_va + code_size,
-        stack_base, stack_top, initial_rsp, NULL);
+        stack_base, stack_top, initial_rsp, NULL, UID_ROOT);
 
     if (pid < 0) {
         __asm__ volatile("sti");
@@ -531,7 +534,7 @@ int proc_create_user_image(const uint8_t *image, size_t image_size,
         entry_vaddr, priority, parent, PROC_TYPE_USER,
         load_vaddr, load_vaddr + image_size,
         stack_base, stack_top, initial_rsp,
-        proc_space);
+        proc_space, UID_ROOT);
 
     if (pid < 0) {
         vmm_destroy_address_space(proc_space);
@@ -873,7 +876,7 @@ int proc_create_user_image_argv(const uint8_t *image, size_t image_size,
         entry_vaddr, priority, parent, PROC_TYPE_USER,
         load_vaddr, load_vaddr + image_size,
         stack_base, stack_top, initial_rsp,
-        proc_space);
+        proc_space, UID_ROOT);
 
     if (pid < 0) {
         vmm_destroy_address_space(proc_space);
@@ -884,5 +887,223 @@ int proc_create_user_image_argv(const uint8_t *image, size_t image_size,
     __asm__ volatile("sti");
     log_ok("PROC", "Created user task PID %d | entry=0x%lx argc=%d envc=%d",
            pid, entry_vaddr, argc, envc);
+    return pid;
+}
+static bool proc_can_act(uid_t actor, int pid)
+{
+    if (!user_exists(actor))
+        return false;
+
+    int idx = proc_find_index(pid);
+    if (idx < 0)
+        return false;
+
+    uid_t owner = proc_table[idx].proc.Owner;
+
+    if (actor == owner)
+        return true;
+
+    return user_get_perm_level(actor) < user_get_perm_level(owner);
+}
+
+uid_t proc_get_owner(int pid)
+{
+    int idx = proc_find_index(pid);
+    if (idx < 0)
+        return -1;
+    return proc_table[idx].proc.Owner;
+}
+
+int proc_set_owner(int pid, uid_t new_owner)
+{
+    if (!user_exists(new_owner))
+        return -1;
+    int idx = proc_find_index(pid);
+    if (idx < 0)
+        return -1;
+    proc_table[idx].proc.Owner = new_owner;
+    return 0;
+}
+
+int proc_kill_as(uid_t actor, int pid)
+{
+    if (!proc_can_act(actor, pid))
+        return -1;
+
+    int idx = proc_find_index(pid);
+    if (idx < 0)
+        return -1;
+
+    __asm__ volatile("cli");
+    proc_terminate(idx, 1);
+    __asm__ volatile("sti");
+    return 0;
+}
+
+int proc_block_as(uid_t actor, int pid)
+{
+    if (!proc_can_act(actor, pid))
+        return -1;
+
+    proc_block(pid);
+    return 0;
+}
+
+int proc_unblock_as(uid_t actor, int pid)
+{
+    if (!proc_can_act(actor, pid))
+        return -1;
+
+    proc_unblock(pid);
+    return 0;
+}
+
+uint64_t proc_wait_pid_as(uid_t actor, uint64_t pid)
+{
+    if (!proc_can_act(actor, (int)pid))
+        return (uint64_t)-1;
+
+    return proc_wait_pid(pid);
+}
+
+int proc_create_kernel_as(uid_t owner, void (*entry)(void),
+                          uint32_t priority, uint32_t parent)
+{
+    if (!user_exists(owner))
+        return -1;
+
+    return proc_create_internal((uint64_t)entry, priority, parent,
+                                PROC_TYPE_KERNEL, 0, 0, 0, 0, 0, NULL, owner);
+}
+
+int proc_create_user_as(uid_t owner, void (*entry)(void), void (*end_marker)(void),
+                        uint32_t priority, uint32_t parent)
+{
+    if (!user_exists(owner))
+        return -1;
+
+    __asm__ volatile("cli");
+
+    if (!entry || !end_marker) {
+        __asm__ volatile("sti");
+        return -1;
+    }
+
+    size_t code_size = (uint64_t)end_marker - (uint64_t)entry;
+
+    if (code_size == 0 || code_size > (USER_CODE_LIMIT - USER_CODE_BASE)) {
+        __asm__ volatile("sti");
+        return -1;
+    }
+
+    size_t   alloc_size   = (code_size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+    uint64_t user_code_va = next_user_code_addr;
+
+    if (user_code_va + alloc_size >= USER_CODE_LIMIT) {
+        __asm__ volatile("sti");
+        return -1;
+    }
+
+    address_space_t *kspace = vmm_get_kernel_space();
+
+    for (size_t off = 0; off < alloc_size; off += PAGE_SIZE) {
+        void *mapped = vmm_alloc_page(kspace, (void *)(user_code_va + off), VMM_USER_PAGE);
+        if (!mapped) {
+            __asm__ volatile("sti");
+            return -1;
+        }
+        size_t copy_len = (off < code_size)
+            ? ((code_size - off < PAGE_SIZE) ? (code_size - off) : PAGE_SIZE) : 0;
+        if (copy_len)
+            memcpy((void *)(user_code_va + off), (uint8_t *)entry + off, copy_len);
+        if (copy_len < PAGE_SIZE)
+            memset((void *)(user_code_va + off + copy_len), 0, PAGE_SIZE - copy_len);
+    }
+
+    uint64_t stack_top, stack_base, initial_rsp;
+    if (user_map_stack(kspace, &stack_top, &stack_base, &initial_rsp) < 0) {
+        __asm__ volatile("sti");
+        return -1;
+    }
+
+    int pid = proc_create_internal(
+        user_code_va, priority, parent, PROC_TYPE_USER,
+        user_code_va, user_code_va + code_size,
+        stack_base, stack_top, initial_rsp, NULL, owner);
+
+    if (pid < 0) {
+        __asm__ volatile("sti");
+        return -1;
+    }
+
+    next_user_code_addr = user_code_va + alloc_size;
+    __asm__ volatile("sti");
+    log_ok("PROC", "Created user task PID %d owner=%d | code=[0x%lx,0x%lx)",
+           pid, owner, user_code_va, user_code_va + code_size);
+    return pid;
+}
+
+int proc_create_user_image_as(uid_t owner, const uint8_t *image, size_t image_size,
+                              uint64_t load_vaddr, uint64_t entry_vaddr,
+                              uint32_t priority, uint32_t parent)
+{
+    if (!user_exists(owner))
+        return -1;
+
+    __asm__ volatile("cli");
+
+    if (!image || image_size == 0) { __asm__ volatile("sti"); return -1; }
+
+    if (load_vaddr < USER_CODE_BASE || load_vaddr >= USER_CODE_LIMIT) {
+        __asm__ volatile("sti"); return -1;
+    }
+
+    if (entry_vaddr < load_vaddr || entry_vaddr >= load_vaddr + image_size) {
+        __asm__ volatile("sti"); return -1;
+    }
+
+    size_t alloc_size = (image_size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+
+    if (load_vaddr + alloc_size > USER_CODE_LIMIT) {
+        __asm__ volatile("sti"); return -1;
+    }
+
+    address_space_t *proc_space = vmm_create_address_space();
+    if (!proc_space) { __asm__ volatile("sti"); return -1; }
+
+    for (size_t off = 0; off < alloc_size; off += PAGE_SIZE) {
+        const uint8_t *src      = (off < image_size) ? (image + off) : NULL;
+        size_t         copy_len = (off < image_size)
+            ? ((image_size - off < PAGE_SIZE) ? (image_size - off) : PAGE_SIZE) : 0;
+
+        if (!map_user_page(proc_space, load_vaddr + off, src, copy_len)) {
+            vmm_destroy_address_space(proc_space);
+            __asm__ volatile("sti");
+            return -1;
+        }
+    }
+
+    uint64_t stack_top, stack_base, initial_rsp;
+    if (user_map_stack(proc_space, &stack_top, &stack_base, &initial_rsp) < 0) {
+        vmm_destroy_address_space(proc_space);
+        __asm__ volatile("sti");
+        return -1;
+    }
+
+    int pid = proc_create_internal(
+        entry_vaddr, priority, parent, PROC_TYPE_USER,
+        load_vaddr, load_vaddr + image_size,
+        stack_base, stack_top, initial_rsp,
+        proc_space, owner);
+
+    if (pid < 0) {
+        vmm_destroy_address_space(proc_space);
+        __asm__ volatile("sti");
+        return -1;
+    }
+
+    __asm__ volatile("sti");
+    log_ok("PROC", "Created user task PID %d owner=%d | entry=0x%lx",
+           pid, owner, entry_vaddr);
     return pid;
 }

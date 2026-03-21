@@ -3,6 +3,7 @@
 #include <arch/x86_64/syscalls.h>
 #include <proc/proc.h>
 #include <debug.h>
+#include <hal/vfs.h>
 #include <shutdown/shutdown.h>
 #include <loaders/bin_loader.h>
 
@@ -17,29 +18,6 @@ uint64_t load_bin(uint64_t path, uint64_t priority)
     int pid = bin_load_elf((const char *)path, (uint32_t)priority, proc_get_current_pid());
     x86_64_EnableInterrupts();
     return pid;
-}
-
-/* syscall 59 - execve(const char *path, const char *const argv[], const char *const envp[]) */
-uint64_t sys_execve(uint64_t path, uint64_t argv, uint64_t envp)
-{
-    const char  *prog = (const char *)path;
-    const char **av   = (const char **)argv;
-    const char **ev   = (const char **)envp;
-
-    int argc = 0;
-    int envc = 0;
-
-    if (av)
-        while (av[argc]) argc++;
-
-    if (ev)
-        while (ev[envc]) envc++;
-
-    x86_64_DisableInterrupts();
-    int pid = bin_load_elf_argv(prog, 1, proc_get_current_pid(),
-                                argc, av, envc, ev);
-    x86_64_EnableInterrupts();
-    return (uint64_t)pid;
 }
 
 void register_syscalls()

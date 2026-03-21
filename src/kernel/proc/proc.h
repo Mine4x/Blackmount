@@ -3,6 +3,7 @@
 #include <arch/x86_64/isr.h>
 #include <mem/pmm.h>
 #include <stdbool.h>
+#include <user/user.h>
 
 #define MAX_PROCESSES    64
 #define PROC_STACK_SIZE  8192
@@ -22,6 +23,7 @@ typedef struct {
     uint32_t WaitingFor;
     uint32_t ExitCode;
     ProcType Type;
+    uid_t    Owner;
 } Proc_t;
 
 typedef enum {
@@ -60,5 +62,21 @@ bool proc_is_valid_demand_addr(uint64_t vaddr);
 uint64_t proc_wait_pid(uint64_t pid);
 uint64_t proc_brk(uint64_t new_brk);
 int64_t  proc_sbrk(int64_t increment);
+
+uid_t proc_get_owner(int pid);
+int   proc_set_owner(int pid, uid_t new_owner);
+
+int      proc_kill_as(uid_t actor, int pid);
+int      proc_block_as(uid_t actor, int pid);
+int      proc_unblock_as(uid_t actor, int pid);
+uint64_t proc_wait_pid_as(uid_t actor, uint64_t pid);
+
+int proc_create_kernel_as(uid_t owner, void (*entry)(void),
+                          uint32_t priority, uint32_t parent);
+int proc_create_user_as(uid_t owner, void (*entry)(void), void (*end_marker)(void),
+                        uint32_t priority, uint32_t parent);
+int proc_create_user_image_as(uid_t owner, const uint8_t *image, size_t image_size,
+                              uint64_t load_vaddr, uint64_t entry_vaddr,
+                              uint32_t priority, uint32_t parent);
 
 #define USER_PROGRAM_END() void __user_program_end_##__LINE__(void) {}

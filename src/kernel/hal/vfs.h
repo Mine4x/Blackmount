@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <drivers/fs/ext/ext2.h>
 #include <device/device.h>
+#include <user/user.h>
 
 typedef int fd_t;
 
@@ -39,6 +40,7 @@ typedef struct {
     disk_type_t      disk_type;
     file_flags_t     flags;
     int              pid;
+    uid_t            owner;
     bool             exists;
     bool             is_dir;
     device_t*        dev;
@@ -62,3 +64,5 @@ int  VFS_ioctl(int fd, uint64_t req, void* arg);
 int  VFS_Write_old(fd_t file, uint8_t* data, size_t size);
 void VFS_Init(void);
 void VFS_Unmount(void);
+
+uint64_t sys_execve(uint64_t path, uint64_t argv, uint64_t envp);

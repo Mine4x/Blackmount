@@ -1,4 +1,5 @@
 #include "vfs.h"
+#include <user/user.h>
 #include <arch/x86_64/e9.h>
 #include <fb/textrenderer.h>
 #include <block/block.h>
@@ -70,8 +71,34 @@ static int check_path(const char* path)
     return -1;
 }
 
+static uid_t vfs_caller_uid(void)
+{
+    int pid = proc_get_current_pid();
+    if (pid < 0)
+        return UID_ROOT;
+    uid_t uid = proc_get_owner(pid);
+    if (!user_exists(uid))
+        return UID_ROOT;
+    return uid;
+}
+
+static bool vfs_access_ok(const char* path, int mask, bool privileged)
+{
+    if (privileged)
+        return true;
+    uid_t uid = vfs_caller_uid();
+    if (user_is_root(uid))
+        return true;
+    return ext2_access(rootfs, path, uid, mask) == EXT2_SUCCESS;
+}
+
 int VFS_Create(const char* path, bool isDir)
 {
+    if (!vfs_access_ok(path, ACCESS_WRITE, false)) {
+        log_err("VFS", "VFS_Create: permission denied for %s", path);
+        return -1;
+    }
+
     if (isDir) {
         int result = ext2_mkdir(rootfs, path);
         if (result == EXT2_SUCCESS)
@@ -100,6 +127,13 @@ int VFS_Open(const char* path, bool privileged)
     if (response != -1 && !privileged)
         return response;
 
+    if (!vfs_access_ok(path, ACCESS_READ, privileged)) {
+        log_err("VFS", "VFS_Open: permission denied for %s", path);
+        return -1;
+    }
+
+    uid_t caller_uid = privileged ? UID_ROOT : vfs_caller_uid();
+
     ext2_inode_t inode;
     if (ext2_stat(rootfs, path, &inode) == EXT2_SUCCESS &&
         (inode.i_mode & 0xF000) == EXT2_S_IFDIR)
@@ -116,6 +150,7 @@ int VFS_Open(const char* path, bool privileged)
                 open_files[i].is_dir   = true;
                 open_files[i].exists   = true;
                 open_files[i].is_dev   = false;
+                open_files[i].owner    = caller_uid;
                 open_files[i].pid      = privileged ? -1 : proc_get_current_pid();
                 if (privileged)
                     open_files[i].flags = KERNEL;
@@ -138,6 +173,7 @@ int VFS_Open(const char* path, bool privileged)
             open_files[i].dir_iter = NULL;
             open_files[i].is_dir   = false;
             open_files[i].exists   = true;
+            open_files[i].owner    = caller_uid;
             open_files[i].pid      = proc_get_current_pid();
 
             if (privileged) {
@@ -186,6 +222,10 @@ int VFS_Write(int fd, size_t count, void* buf, bool privileged)
     if (!privileged && open_files[fd].pid != proc_get_current_pid())
         return -1;
 
+    if (!open_files[fd].is_dev
+        && !vfs_access_ok(open_files[fd].path, ACCESS_WRITE, privileged))
+        return -1;
+
     if (!open_files[fd].file)
         return -1;
 
@@ -202,6 +242,9 @@ int VFS_Read(int fd, size_t count, void* buf)
         return -1;
 
     if (!open_files[fd].exists)
+        return -1;
+
+    if (open_files[fd].pid != -1 && open_files[fd].pid != proc_get_current_pid())
         return -1;
 
     if (!open_files[fd].file)
@@ -411,4 +454,34 @@ int VFS_Write_old(fd_t file, uint8_t* data, size_t size)
     default:
         return -1;
     }
+}
+
+uint64_t sys_execve(uint64_t path, uint64_t argv, uint64_t envp)
+{
+    const char  *prog = (const char *)path;
+    const char **av   = (const char **)argv;
+    const char **ev   = (const char **)envp;
+
+    uid_t caller_uid = proc_get_owner(proc_get_current_pid());
+    if (!user_exists(caller_uid))
+        return (uint64_t)-1;
+
+    if (!user_is_root(caller_uid)) {
+        if (ext2_access(rootfs, prog, caller_uid, ACCESS_EXEC) != EXT2_SUCCESS)
+            return (uint64_t)-1;
+    }
+
+    int argc = 0;
+    int envc = 0;
+    if (av) while (av[argc]) argc++;
+    if (ev) while (ev[envc]) envc++;
+
+    x86_64_DisableInterrupts();
+    int pid = bin_load_elf_argv(prog, 1, proc_get_current_pid(),
+                                argc, av, envc, ev);
+    if (pid > 0)
+        proc_set_owner(pid, caller_uid);
+    x86_64_EnableInterrupts();
+
+    return (uint64_t)pid;
 }
