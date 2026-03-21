@@ -1,115 +1,74 @@
 #include "syscalls.h"
 #include <stddef.h>
-#include "gdt.h"
+#include <stdint.h>
+#include <proc/proc.h>
+#include "io.h"
 
-/*
- * MSR definitions for SYSCALL
- */
-#define IA32_EFER   0xC0000080
-#define IA32_STAR   0xC0000081
-#define IA32_LSTAR  0xC0000082
-#define IA32_FMASK  0xC0000084
+#define MSR_EFER    0xC0000080u   /* Extended Feature Enable Register      */
+#define MSR_STAR    0xC0000081u   /* Syscall Target Address (segment bases) */
+#define MSR_LSTAR   0xC0000082u   /* Long-mode Syscall Target RIP           */
+#define MSR_FMASK   0xC0000084u   /* Syscall RFLAGS mask                    */
 
-#define EFER_SCE    (1ULL << 0)   // SYSCALL enable
+#define EFER_SCE    (UINT64_C(1) << 0)
 
-#define KERNEL_CS x86_64_GDT_CODE_SEGMENT
-#define USER_CS   (x86_64_GDT_USER_CODE_SEGMENT | 0x3)
+static SyscallHandler g_SyscallHandlers[SYSCALL_MAX_COUNT];
 
-/*
- * External ASM syscall entry
- */
-extern void syscall_handler_asm(void);
+uint64_t x86_64_Syscall_KernelStack = 0;
 
-/*
- * Syscall table
- */
-static syscall_handler_t syscall_table[MAX_SYSCALLS] = {0};
-
-/*
- * MSR helpers
- */
 static inline void wrmsr(uint32_t msr, uint64_t value)
 {
-    uint32_t lo = (uint32_t)(value & 0xFFFFFFFF);
-    uint32_t hi = (uint32_t)(value >> 32);
-
-    __asm__ volatile(
+    __asm__ volatile (
         "wrmsr"
-        :
-        : "c"(msr), "a"(lo), "d"(hi)
+        :: "c"(msr),
+           "a"((uint32_t)(value)),
+           "d"((uint32_t)(value >> 32))
     );
 }
 
 static inline uint64_t rdmsr(uint32_t msr)
 {
     uint32_t lo, hi;
-
-    __asm__ volatile(
-        "rdmsr"
-        : "=a"(lo), "=d"(hi)
-        : "c"(msr)
-    );
-
+    __asm__ volatile ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
     return ((uint64_t)hi << 32) | lo;
 }
 
-void syscalls_init(void)
+extern void x86_64_Syscall_Entry(void);
+
+void x86_64_Syscall_Initialize(void)
 {
-    for (uint64_t i = 0; i < MAX_SYSCALLS; i++)
-        syscall_table[i] = NULL;
+    wrmsr(MSR_EFER, rdmsr(MSR_EFER) | EFER_SCE);
 
-    uint64_t efer = rdmsr(IA32_EFER);
-    efer |= EFER_SCE;
-    wrmsr(IA32_EFER, efer);
+    wrmsr(MSR_STAR,
+          ((uint64_t)0x10u << 48) |
+          ((uint64_t)0x08u << 32));
 
-    uint64_t star =
-        ((uint64_t)USER_CS   << 48) |
-        ((uint64_t)KERNEL_CS << 32);
+    wrmsr(MSR_LSTAR, (uint64_t)(uintptr_t)x86_64_Syscall_Entry);
 
-    wrmsr(IA32_STAR, star);
-
-    wrmsr(IA32_LSTAR, (uint64_t)syscall_handler_asm);
-
-    wrmsr(IA32_FMASK, (1ULL << 9));
+    wrmsr(MSR_FMASK, 0x200u);
 }
 
-int syscall_register(uint64_t number, syscall_handler_t handler)
+void x86_64_Syscall_SetKernelStack(uint64_t rsp)
 {
-    if (number >= MAX_SYSCALLS)
-        return -1;
-
-    if (handler == NULL)
-        return -1;
-
-    syscall_table[number] = handler;
-    return 0;
+    x86_64_Syscall_KernelStack = rsp;
 }
 
-int syscall_unregister(uint64_t number)
+void x86_64_Syscall_RegisterHandler(uint64_t number, SyscallHandler handler)
 {
-    if (number >= MAX_SYSCALLS)
-        return -1;
-
-    syscall_table[number] = NULL;
-    return 0;
+    if (number < SYSCALL_MAX_COUNT)
+        g_SyscallHandlers[number] = handler;
 }
 
-int64_t syscall_dispatcher(
-    uint64_t number,
-    uint64_t arg1,
-    uint64_t arg2,
-    uint64_t arg3,
-    uint64_t arg4,
-    uint64_t arg5
-)
+uint64_t x86_64_Syscall_Dispatch(uint64_t number,
+                                  uint64_t arg1, uint64_t arg2, uint64_t arg3,
+                                  uint64_t arg4, uint64_t arg5, uint64_t arg6)
 {
-    if (number >= MAX_SYSCALLS)
-        return -1;
-
-    syscall_handler_t handler = syscall_table[number];
-
-    if (!handler)
-        return -1;
-
-    return handler(arg1, arg2, arg3, arg4, arg5);
+    if (number < SYSCALL_MAX_COUNT && g_SyscallHandlers[number] != NULL)
+    {
+        proc_enter_syscall();
+        uint64_t r = g_SyscallHandlers[number](arg1, arg2, arg3, arg4, arg5, arg6);
+        proc_exit_syscall();
+        return r;
+    }
+    
+    return (uint64_t)-1;
 }

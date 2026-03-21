@@ -20,6 +20,11 @@ extern struct limine_memmap_response* memmap;
 #define PHYS_TO_VIRT(addr) ((void*)((uint64_t)(addr) + hhdm_offset))
 #define VIRT_TO_PHYS(addr) ((uint64_t)(addr) - hhdm_offset)
 
+// Get the end of all memory
+void* pmm_get_end_of_memory(void) {
+    return (void*)highest_addr;
+}
+
 // Bitmap manipulation
 static inline void bitmap_set(uint64_t page) {
     bitmap[page / 8] |= (1 << (page % 8));

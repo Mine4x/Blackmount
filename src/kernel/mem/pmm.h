@@ -7,6 +7,9 @@
 
 #define PAGE_SIZE 4096
 
+// Get the end of all memory
+void* pmm_get_end_of_memory(void);
+
 // Initialize the physical memory manager
 void pmm_init(void);
 

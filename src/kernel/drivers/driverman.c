@@ -7,69 +7,58 @@
 #include <drivers/disk/floppy.h>
 #include <config/config.h>
 #include <util/str_to_int.h>
-#include <drivers/input/input.h>
 #include <fb/textrenderer.h>
 #include <hal/vfs.h>
 #include <panic/panic.h>
 #include <arch/x86_64/io.h>
 #include <drivers/usb/xhci/hid_keyboard.h>
 #include <proc/proc.h>
+#include <console/console.h>
 
 #define DRIVERS_MODULE "Drivers"
 
 static void input_keyboard_binding(char c)
 {
-    if (c == 'x')
-    {
-        VFS_Unmount();
-        x86_64_outw(0x604, 0x2000); // Does shutdown if running qemu
-    }
-
     if (c == '\b' || c == 127)
     {
-        if (Input_get_length() == 0)
+        if (console_get_length() == 0)
             return;
 
-        Input_RmChar();
-        tr_backspace();
+        console_backspace();
         return;
     }
 
     if (c == '\n')
     {
+        console_clear();
         printf("\n");
-
-        Input_Clear();
 
         return;
     }
 
-    if (Input_AddChar(c))
-    {
-        printf("%c", c);
-    }
+    console_user_put_c(c);
 }
 
 static void hid_keyboard_loop() {
     if (hid_keyboard_key_available()) {
         uint16_t key = hid_keyboard_read_key();
-        if (key == HID_SPECIAL_KEY_NONE) return;
+        if (key == HID_SPECIAL_KEY_NONE) {return; console_reset_special_char();}
 
         switch (key) {
-            case HID_SPECIAL_KEY_UP:        printf("<UP>");    return;
-            case HID_SPECIAL_KEY_DOWN:      printf("<DOWN>");  return;
-            case HID_SPECIAL_KEY_LEFT:      printf("<LEFT>");  return;
-            case HID_SPECIAL_KEY_RIGHT:     printf("<RIGHT>"); return;
+            case HID_SPECIAL_KEY_UP:        printf("<UP>"); console_add_special_char(key);    return;
+            case HID_SPECIAL_KEY_DOWN:      printf("<DOWN>"); console_add_special_char(key);  return;
+            case HID_SPECIAL_KEY_LEFT:      printf("<LEFT>"); console_add_special_char(key);  return;
+            case HID_SPECIAL_KEY_RIGHT:     printf("<RIGHT>"); console_add_special_char(key); return;
             case HID_SPECIAL_KEY_F1 ... HID_SPECIAL_KEY_F12:
-                printf("<F%d>", key - HID_SPECIAL_KEY_F1 + 1); return;
-            case HID_SPECIAL_KEY_HOME:      printf("<HOME>");  return;
-            case HID_SPECIAL_KEY_END:       printf("<END>");   return;
-            case HID_SPECIAL_KEY_PAGE_UP:   printf("<PGUP>");  return;
-            case HID_SPECIAL_KEY_PAGE_DOWN: printf("<PGDN>");  return;
-            case HID_SPECIAL_KEY_INSERT:    printf("<INS>");   return;
-            case HID_SPECIAL_KEY_DELETE:    printf("<DEL>");   return;
-            case HID_SPECIAL_KEY_CAPS_LOCK: printf("<CAPS>");  return;
-            default:                        input_keyboard_binding((char)key);
+                printf("<F%d>", key - HID_SPECIAL_KEY_F1 + 1); console_add_special_char(key); return;
+            case HID_SPECIAL_KEY_HOME:      printf("<HOME>"); console_add_special_char(key);  return;
+            case HID_SPECIAL_KEY_END:       printf("<END>"); console_add_special_char(key);   return;
+            case HID_SPECIAL_KEY_PAGE_UP:   printf("<PGUP>"); console_add_special_char(key);  return;
+            case HID_SPECIAL_KEY_PAGE_DOWN: printf("<PGDN>"); console_add_special_char(key);  return;
+            case HID_SPECIAL_KEY_INSERT:    printf("<INS>"); console_add_special_char(key);   return;
+            case HID_SPECIAL_KEY_DELETE:    printf("<DEL>"); console_add_special_char(key);   return;
+            case HID_SPECIAL_KEY_CAPS_LOCK: printf("<CAPS>"); console_add_special_char(key);  return;
+            default:                        input_keyboard_binding((char)key); console_set_current_c((char)key);
         }
     }
 }
@@ -95,7 +84,7 @@ void drivers_init(void)
 
     log_info(DRIVERS_MODULE, "Starting Input manager");
 
-    if (!Input_Init(VFS_FD_STDIN))
+    if (!console_init())
         panic(DRIVERS_MODULE, "Failed to initialize Input Manager");
 
     log_debug(DRIVERS_MODULE, "Initialized Input Buffer");

@@ -18,13 +18,13 @@ enter_usermode:
     mov fs, ax
     mov gs, ax
     
-    push 0x23                    ; SS (user data segment with RPL=3)
+    push 0x1B                    ; SS (user data segment with RPL=3)
     push rsi                     ; RSP (user stack)
     pushfq                       ; RFLAGS
     pop rax
     or rax, 0x200                ; Set IF (interrupt flag)
     push rax                     ; RFLAGS with IF set
-    push 0x1B                    ; CS (user code segment with RPL=3)
+    push 0x23                    ; CS (user code segment with RPL=3)
     push rdi                     ; RIP (entry point)
     
     iretq                        ; "Return" to user mode

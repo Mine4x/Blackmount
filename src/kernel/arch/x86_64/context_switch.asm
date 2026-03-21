@@ -1,59 +1,60 @@
-[bits 64]
-global context_switch
+; void resume_kernel_context(Registers *ctx)
 
-context_switch:
-    ; RDI = old
-    ; RSI = new
+%define REG_R15       0
+%define REG_R14       8
+%define REG_R13       16
+%define REG_R12       24
+%define REG_R11       32
+%define REG_R10       40
+%define REG_R9        48
+%define REG_R8        56
+%define REG_RBP       64
+%define REG_RDI       72
+%define REG_RSI       80
+%define REG_RDX       88
+%define REG_RCX       96
+%define REG_RBX       104
+%define REG_RAX       112
+%define REG_INTERRUPT 120
+%define REG_ERROR     128
+%define REG_RIP       136
+%define REG_CS        144
+%define REG_RFLAGS    152
+%define REG_RSP       160
+%define REG_SS        168
 
-    ; Save old context
-    mov [rdi + 0], rax
-    mov [rdi + 8], rbx
-    mov [rdi + 16], rcx
-    mov [rdi + 24], rdx
-    mov [rdi + 32], rsi
-    mov [rdi + 40], rdi
-    mov [rdi + 48], rsp
-    mov [rdi + 56], rbp
+global resume_kernel_context
 
-    lea rax, [rel .resume]
-    mov [rdi + 64], rax
+resume_kernel_context:
+    ; rdi = Registers*
 
-    pushfq
-    pop qword [rdi + 72]
+    ; Build the iretq frame on the stack: ss, rsp, rflags, cs, rip
+    mov rax, [rdi + REG_SS]
+    push rax
+    mov rax, [rdi + REG_RSP]
+    push rax
+    mov rax, [rdi + REG_RFLAGS]
+    push rax
+    mov rax, [rdi + REG_CS]
+    push rax
+    mov rax, [rdi + REG_RIP]
+    push rax
 
-    mov [rdi + 80], r8
-    mov [rdi + 88], r9
-    mov [rdi + 96], r10
-    mov [rdi + 104], r11
-    mov [rdi + 112], r12
-    mov [rdi + 120], r13
-    mov [rdi + 128], r14
-    mov [rdi + 136], r15
+    ; Restore GPRs (restore rdi last since it holds our struct pointer)
+    mov r15, [rdi + REG_R15]
+    mov r14, [rdi + REG_R14]
+    mov r13, [rdi + REG_R13]
+    mov r12, [rdi + REG_R12]
+    mov r11, [rdi + REG_R11]
+    mov r10, [rdi + REG_R10]
+    mov r9,  [rdi + REG_R9]
+    mov r8,  [rdi + REG_R8]
+    mov rbp, [rdi + REG_RBP]
+    mov rsi, [rdi + REG_RSI]
+    mov rdx, [rdi + REG_RDX]
+    mov rcx, [rdi + REG_RCX]
+    mov rbx, [rdi + REG_RBX]
+    mov rax, [rdi + REG_RAX]
+    mov rdi, [rdi + REG_RDI]
 
-    ; Load new context
-    mov rdx, rsi    ; rdx = new context pointer
-
-    mov rax, [rdx + 0]
-    mov rbx, [rdx + 8]
-    mov rcx, [rdx + 16]
-    mov r8,  [rdx + 80]
-    mov r9,  [rdx + 88]
-    mov r10, [rdx + 96]
-    mov r11, [rdx + 104]
-    mov r12, [rdx + 112]
-    mov r13, [rdx + 120]
-    mov r14, [rdx + 128]
-    mov r15, [rdx + 136]
-
-    mov rsi, [rdx + 32]
-    mov rdi, [rdx + 40]
-    mov rbp, [rdx + 56]
-    mov rsp, [rdx + 48]
-
-    push qword [rdx + 72]
-    popfq
-
-    jmp qword [rdx + 64]
-
-.resume:
-    ret
+    iretq

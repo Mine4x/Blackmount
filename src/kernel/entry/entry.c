@@ -28,13 +28,17 @@
 #include <mem/dma.h>
 #include <drivers/usb/xhci/xhci.h>
 #include <drivers/usb/xhci/hid_keyboard.h>
+#include <loaders/bin_loader.h>
+#include <device/device.h>
+#include <console/console.h>
+#include <user/user.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 
 static void ok(const char* string)
 {
-    printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
+    //printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
 }
 
 static void fail(const char* string) {
@@ -75,6 +79,10 @@ void kmain(void)
     init_heap();
     log_ok("Boot", "Initialized Heap");
     ok("Initialized Heap");
+
+    device_init();
+    log_ok("Boot", "Initialized Device list");
+    ok("Initialized Device list");
 
     dma_init();
     log_ok("boot", "Initialized DMA Allocator");
@@ -117,10 +125,23 @@ void kmain(void)
     loadConfig();
     log_ok("Boot", "Loaded Kernel Config");
     ok("Loaded Kernel Config");
+
+    if (user_init() < 0)
+    {
+        panic("Boot", "Unable to initalize usersystem");
+    }
+    log_ok("Boot", "Initialized usersystem");
     
     VFS_Init();
     log_ok("Boot", "Initialized VFS");
     ok("Initialized VFS");
+
+    VFS_Create("/root", true);
+    user_load_from_disk();
+    user_save_to_disk();
+
+    fb_make_dev();
+    console_make_dev();
 
     proc_init();
     log_ok("Boot", "Initialized Multitasking");
@@ -131,17 +152,21 @@ void kmain(void)
     ok("Initialized initial drivers");
 
     log_info("Kernel", "Loading syscalls");
-    syscalls_init();
+    x86_64_Syscall_Initialize();
     register_syscalls();
     log_ok("Kernel", "Loaded and registerd syscalls");
     ok("Loaded and registerd syscalls");
 
+    int r = bin_load_elf("/bin/misys", 10, 0);
+    if (r < 0)
+    {
+        log_err("Kernel", "Failed to load binary: %d", r);
+    }
+    
     x86_64_EnableInterrupts();
 
     log_ok("Kernel", "Initialized all imortant systems");
     ok("Kernel Started completly");
-
-    printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\n");
 
     proc_start_scheduling();
 

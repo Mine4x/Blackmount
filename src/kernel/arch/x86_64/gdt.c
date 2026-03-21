@@ -1,6 +1,7 @@
 #include "gdt.h"
 #include <stdint.h>
 #include <string.h>
+#include "syscalls.h"
 
 typedef struct
 {
@@ -111,17 +112,16 @@ static struct {
                   GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_DATA_SEGMENT | GDT_ACCESS_DATA_WRITEABLE,
                   GDT_FLAG_GRANULARITY_4K),
         
-        // User 64-bit code segment (0x18)
-        GDT_ENTRY(0,
-                  0,
-                  GDT_ACCESS_PRESENT | GDT_ACCESS_RING3 | GDT_ACCESS_CODE_SEGMENT | GDT_ACCESS_CODE_READABLE,
-                  GDT_FLAG_64BIT | GDT_FLAG_GRANULARITY_4K),
-        
-        // User 64-bit data segment (0x20)
-        GDT_ENTRY(0,
-                  0,
-                  GDT_ACCESS_PRESENT | GDT_ACCESS_RING3 | GDT_ACCESS_DATA_SEGMENT | GDT_ACCESS_DATA_WRITEABLE,
-                  GDT_FLAG_GRANULARITY_4K),
+        // User 64-bit data segment (0x18)
+        GDT_ENTRY(0, 0, GDT_ACCESS_PRESENT | GDT_ACCESS_RING3 |
+                    GDT_ACCESS_DATA_SEGMENT | GDT_ACCESS_DATA_WRITEABLE,
+                    GDT_FLAG_GRANULARITY_4K),
+
+        // User 64-bit code segment (0x20)
+        GDT_ENTRY(0, 0, GDT_ACCESS_PRESENT | GDT_ACCESS_RING3 |
+                    GDT_ACCESS_CODE_SEGMENT | GDT_ACCESS_CODE_READABLE,
+                    GDT_FLAG_64BIT | GDT_FLAG_GRANULARITY_4K),
+
     },
     .tss = {0}  // Will be initialized in x86_64_GDT_Initialize
 };
@@ -160,4 +160,5 @@ void x86_64_GDT_Initialize()
 void x86_64_TSS_SetKernelStack(uint64_t stack)
 {
     g_TSS.RSP0 = stack;
+    x86_64_Syscall_SetKernelStack(stack);
 }

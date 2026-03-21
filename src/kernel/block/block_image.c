@@ -1,6 +1,7 @@
 #include <block/block.h>
 #include "block_image.h"
 #include <limine/limine_req.h>
+#include <memory.h>
 #include <heap.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -33,11 +34,16 @@ static bool image_write(block_device_t* dev,
                         uint32_t        count,
                         const void*     buf)
 {
-    (void)dev;
-    (void)lba;
-    (void)count;
-    (void)buf;
-    return false;
+    image_ctx_t* ctx        = (image_ctx_t*)dev->driver_data;
+    uint64_t     byte_off   = (dev->lba_offset + lba) * dev->sector_size;
+    uint64_t     byte_count = (uint64_t)count * dev->sector_size;
+
+    if (byte_off + byte_count > ctx->size_bytes) {
+        return false;
+    }
+
+    memcpy(ctx->base + byte_off, buf, byte_count);
+    return true;
 }
 
 block_device_t* image_create_blockdev(const char* name, const char* mod_name)

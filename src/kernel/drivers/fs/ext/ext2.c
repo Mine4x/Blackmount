@@ -1594,3 +1594,181 @@ bool ext2_exists(ext2_fs_t* fs, const char* path) {
     uint32_t inode_num;
     return ext2_resolve_path(fs, path, &inode_num, NULL) == EXT2_SUCCESS;
 }
+
+uint16_t ext2_get_mode(ext2_fs_t* fs, const char* path) {
+    if (!fs || !path) {
+        return 0;
+    }
+
+    uint32_t inode_num;
+    int result = ext2_resolve_path(fs, path, &inode_num, NULL);
+    if (result != EXT2_SUCCESS) {
+        return 0;
+    }
+
+    ext2_inode_t inode;
+    result = ext2_read_inode(fs, inode_num, &inode);
+    if (result != EXT2_SUCCESS) {
+        return 0;
+    }
+
+    return inode.i_mode;
+}
+
+int ext2_chmod(ext2_fs_t* fs, const char* path, uint16_t mode) {
+    if (!fs || !path) {
+        return EXT2_ERROR_INVALID;
+    }
+
+    uint32_t inode_num;
+    int result = ext2_resolve_path(fs, path, &inode_num, NULL);
+    if (result != EXT2_SUCCESS) {
+        return result;
+    }
+
+    ext2_inode_t inode;
+    result = ext2_read_inode(fs, inode_num, &inode);
+    if (result != EXT2_SUCCESS) {
+        return result;
+    }
+
+    // Replace only the permission bits; keep the file-type bits intact.
+    inode.i_mode = (inode.i_mode & ~EXT2_S_PERM_MASK) | (mode & EXT2_S_PERM_MASK);
+
+    return ext2_write_inode(fs, inode_num, &inode);
+}
+
+int ext2_get_owner(ext2_fs_t* fs, const char* path, uint16_t* uid, uint16_t* gid) {
+    if (!fs || !path) {
+        return EXT2_ERROR_INVALID;
+    }
+
+    uint32_t inode_num;
+    int result = ext2_resolve_path(fs, path, &inode_num, NULL);
+    if (result != EXT2_SUCCESS) {
+        return result;
+    }
+
+    ext2_inode_t inode;
+    result = ext2_read_inode(fs, inode_num, &inode);
+    if (result != EXT2_SUCCESS) {
+        return result;
+    }
+
+    if (uid) {
+        *uid = inode.i_uid;
+    }
+    if (gid) {
+        *gid = inode.i_gid;
+    }
+
+    return EXT2_SUCCESS;
+}
+
+int ext2_chown(ext2_fs_t* fs, const char* path, uint16_t uid, uint16_t gid) {
+    if (!fs || !path) {
+        return EXT2_ERROR_INVALID;
+    }
+
+    uint32_t inode_num;
+    int result = ext2_resolve_path(fs, path, &inode_num, NULL);
+    if (result != EXT2_SUCCESS) {
+        return result;
+    }
+
+    ext2_inode_t inode;
+    result = ext2_read_inode(fs, inode_num, &inode);
+    if (result != EXT2_SUCCESS) {
+        return result;
+    }
+
+    // (uint16_t)-1 is the sentinel "leave unchanged" value.
+    if (uid != (uint16_t)-1) {
+        inode.i_uid = uid;
+    }
+    if (gid != (uint16_t)-1) {
+        inode.i_gid = gid;
+    }
+
+    return ext2_write_inode(fs, inode_num, &inode);
+}
+
+int ext2_access(ext2_fs_t* fs, const char* path, uid_t requesting_uid, int mask) {
+    if (!fs || !path) {
+        return EXT2_ERROR_INVALID;
+    }
+
+    if (!user_exists(requesting_uid)) {
+        return EXT2_ERROR_INVALID;
+    }
+
+    // Root bypasses all permission checks.
+    if (user_is_root(requesting_uid)) {
+        return EXT2_SUCCESS;
+    }
+
+    ext2_inode_t inode;
+    int result = ext2_stat(fs, path, &inode);
+    if (result != EXT2_SUCCESS) {
+        return result;
+    }
+
+    // Determine which rwx triplet applies to this user.
+    int shift;
+    if ((uint16_t)requesting_uid == inode.i_uid) {
+        shift = 6; // owner bits (rwx------)
+    } else if ((uint16_t)user_get_gid(requesting_uid) == inode.i_gid) {
+        shift = 3; // group bits (---rwx---)
+    } else {
+        shift = 0; // other bits (------rwx)
+    }
+
+    int allowed = (inode.i_mode >> shift) & 0x7;
+    if ((allowed & mask) != mask) {
+        return EXT2_ERROR_PERM;
+    }
+
+    return EXT2_SUCCESS;
+}
+
+int ext2_chmod_as(ext2_fs_t* fs, const char* path, uid_t requesting_uid, uint16_t mode) {
+    if (!fs || !path) {
+        return EXT2_ERROR_INVALID;
+    }
+
+    if (!user_exists(requesting_uid)) {
+        return EXT2_ERROR_INVALID;
+    }
+
+    // Only the file owner or root may change permissions.
+    if (!user_is_root(requesting_uid)) {
+        ext2_inode_t inode;
+        int result = ext2_stat(fs, path, &inode);
+        if (result != EXT2_SUCCESS) {
+            return result;
+        }
+        if (inode.i_uid != (uint16_t)requesting_uid) {
+            return EXT2_ERROR_PERM;
+        }
+    }
+
+    return ext2_chmod(fs, path, mode);
+}
+
+int ext2_chown_as(ext2_fs_t* fs, const char* path, uid_t requesting_uid,
+                  uint16_t new_uid, uint16_t new_gid) {
+    if (!fs || !path) {
+        return EXT2_ERROR_INVALID;
+    }
+
+    if (!user_exists(requesting_uid)) {
+        return EXT2_ERROR_INVALID;
+    }
+
+    // Only root may transfer ownership.
+    if (!user_is_root(requesting_uid)) {
+        return EXT2_ERROR_PERM;
+    }
+
+    return ext2_chown(fs, path, new_uid, new_gid);
+}
