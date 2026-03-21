@@ -4,7 +4,7 @@ qemu-system-x86_64 \
   -m 4G \
   -smp 4 \
   -debugcon stdio \
-  -cdrom build/nbos.iso \
+  -cdrom build/bmos.iso \
   -hda build/harddisk.img \
   -boot d \
   -device qemu-xhci,id=xhci,p3=4,p2=4 \

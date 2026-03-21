@@ -9,9 +9,9 @@ include build_scripts/toolchain.mk
 #
 # ISO image
 #
-iso_image: $(BUILD_DIR)/nbos.iso
+iso_image: $(BUILD_DIR)/bmos.iso
 
-$(BUILD_DIR)/nbos.iso: kernel harddisk_image
+$(BUILD_DIR)/bmos.iso: kernel harddisk_image
 	@mkdir -p $(BUILD_DIR)/iso
 	@echo "--> Copying target files (including Limine)..."
 	@cp -r target/* $(BUILD_DIR)/iso/
@@ -39,17 +39,17 @@ harddisk_image: $(BUILD_DIR)/harddisk.img
 
 $(BUILD_DIR)/harddisk.img: always
 	@dd if=/dev/zero of=$@ bs=512 count=131072 status=none
-	@mkfs.ext2 -L NBOSHDD $@ >/dev/null
-	@mkdir -p /tmp/nbosmnt
-	@sudo mount -o loop $@ /tmp/nbosmnt
-	@sudo mkdir -p /tmp/nbosmnt/mydir
-	@sudo mkdir -p /tmp/nbosmnt/dev
-	@sudo mkdir -p /tmp/nbosmnt/bin
-	@sudo cp -r target/* /tmp/nbosmnt
+	@mkfs.ext2 -L BMOSHDD $@ >/dev/null
+	@mkdir -p /tmp/bmosmnt
+	@sudo mount -o loop $@ /tmp/bmosmnt
+	@sudo mkdir -p /tmp/bmosmnt/mydir
+	@sudo mkdir -p /tmp/bmosmnt/dev
+	@sudo mkdir -p /tmp/bmosmnt/bin
+	@sudo cp -r target/* /tmp/bmosmnt
 	@for f in $(BUILD_DIR)/apps/*.bin; do \
-		sudo cp $$f /tmp/nbosmnt/bin/$$(basename $${f%.bin}); \
+		sudo cp $$f /tmp/bmosmnt/bin/$$(basename $${f%.bin}); \
 	done
-	@sudo umount /tmp/nbosmnt
+	@sudo umount /tmp/bmosmnt
 	@echo "--> Created: $@"
 
 
