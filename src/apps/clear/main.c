@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <syscalls.h>
+#include <dev/console.h>
 
 #define TTY_CLEAR 1
 
@@ -12,7 +13,8 @@ int main()
         //printf("\033[2J");
     }
 
-    ioctl(fd, TTY_CLEAR, NULL);
+    //ioctl(fd, TTY_CLEAR, NULL);
+    console_clear(fd);
 
     close(fd);
 

@@ -8,8 +8,7 @@ TARGET_LINKFLAGS += -nostdlib
 LIBC_DIR = libc
 LIBC_INCLUDE = $(LIBC_DIR)/include
 
-# exclude crt0.c from libc objects
-LIBC_SRC := $(filter-out $(LIBC_DIR)/crt0.c,$(wildcard $(LIBC_DIR)/src/*.c))
+LIBC_SRC := $(shell find $(LIBC_DIR)/src -name "*.c")
 LIBC_OBJ := $(patsubst $(LIBC_DIR)/src/%.c,$(BUILD_DIR)/libc/%.o,$(LIBC_SRC))
 
 LIBC = $(BUILD_DIR)/libc/libc.a
@@ -43,13 +42,9 @@ $(LIBC): $(LIBC_OBJ)
 	@echo "--> Created libc.a"
 
 $(BUILD_DIR)/libc/%.o: $(LIBC_DIR)/src/%.c
-	@mkdir -p $(@D)
+	@mkdir -p $(dir $@)
 	@$(TARGET_CC) $(TARGET_CFLAGS) -I$(LIBC_INCLUDE) -c $< -o $@
 	@echo "--> Compiled libc: $<"
-
-#
-# crt0 (separate from libc objects)
-#
 
 $(CRT0): $(LIBC_DIR)/crt0.c
 	@mkdir -p $(@D)
@@ -64,7 +59,7 @@ programs: $(PROGRAMS)
 
 define PROGRAM_template
 
-$1_SRC := $$(wildcard $1/*.c)
+$1_SRC := $$(shell find $1 -name "*.c")
 $1_OBJ := $$(patsubst $1/%.c,$$(BUILD_DIR)/apps/$1/%.o,$$($1_SRC))
 $1_BIN := $$(BUILD_DIR)/apps/$1.bin
 
@@ -76,7 +71,7 @@ $$($1_BIN): $$($1_OBJ) $(CRT0) $(LIBC)
 	@echo "--> Created program: $1 (no-pie)"
 
 $$(BUILD_DIR)/apps/$1/%.o: $1/%.c
-	@mkdir -p $$(@D)
+	@mkdir -p $$(dir $$@)
 	@$$(TARGET_CC) $$(TARGET_CFLAGS) -I$(LIBC_INCLUDE) -c $$< -o $$@
 	@echo "--> Compiled $1: $$<"
 

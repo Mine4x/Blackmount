@@ -31,6 +31,7 @@
 #include <loaders/bin_loader.h>
 #include <device/device.h>
 #include <console/console.h>
+#include <user/user.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -124,10 +125,20 @@ void kmain(void)
     loadConfig();
     log_ok("Boot", "Loaded Kernel Config");
     ok("Loaded Kernel Config");
+
+    if (user_init() < 0)
+    {
+        panic("Boot", "Unable to initalize usersystem");
+    }
+    log_ok("Boot", "Initialized usersystem");
     
     VFS_Init();
     log_ok("Boot", "Initialized VFS");
     ok("Initialized VFS");
+
+    VFS_Create("/root", true);
+    user_load_from_disk();
+    user_save_to_disk();
 
     fb_make_dev();
     console_make_dev();
