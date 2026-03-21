@@ -82,12 +82,14 @@ int main(int argc, char **argv)
         }
     }
 
-    if (show_sysname)    printf("%s\n", buf.sysname);
-    if (show_nodename)   printf("%s\n", buf.nodename);
-    if (show_release)    printf("%s\n", buf.release);
-    if (show_version)    printf("%s\n", buf.version);
-    if (show_machine)    printf("%s\n", buf.machine);
-    if (show_domainname) printf("%s\n", buf.domainname);
+    if (show_sysname)    printf("%s ", buf.sysname);
+    if (show_nodename)   printf("%s ", buf.nodename);
+    if (show_release)    printf("%s ", buf.release);
+    if (show_version)    printf("%s ", buf.version);
+    if (show_machine)    printf("%s ", buf.machine);
+    if (show_domainname) printf("%s ", buf.domainname);
+
+    printf("\n");
 
     return 0;
 }
