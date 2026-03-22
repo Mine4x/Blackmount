@@ -19,6 +19,7 @@
 #include <device/device.h>
 #include <device/stdin/device_stdin.h>
 #include <device/stdout/device_stdout.h>
+#include <block/block_mbr.h>
 
 block_device_t* rootdrive;
 ext2_fs_t*      rootfs;
@@ -385,16 +386,20 @@ void VFS_Init(void)
     const char* rd = config_get("bootdisk", "iso");
     if (strcmp(rd, "iso") == 0) {
         log_info("VFS", "Using hdd.img as root");
-
+        
         block_device_t* imgdev = image_create_blockdev("hdaimg", "hdd.img");
         if (!imgdev)
             panic("VFS", "Failed to create block device from hdd.img");
-
-        rootfs = ext2_mount(imgdev);
+        block_register(imgdev);
+        if (!gpt_register_partitions(imgdev))
+            panic("VFS", "Failed to parse GPT on hdd.img");
+        block_device_t* part = block_get("hdaimgp1");
+        if (!part)
+            panic("VFS", "Failed to find partition hdaimgp1");
+        rootfs = ext2_mount(part);
         if (!rootfs)
-            panic("VFS", "Failed to mount ext2 on hdd.img");
-
-        rootdrive = imgdev;
+            panic("VFS", "Failed to mount ext2 on hdaimgp1");
+        rootdrive = part;
         mounted   = true;
 
         create_special_files();
