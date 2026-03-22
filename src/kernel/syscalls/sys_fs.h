@@ -5,19 +5,7 @@
 #include <arch/x86_64/io.h>
 #include <console/console.h>
 
-uint64_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
-                  uint64_t unused1, uint64_t unused2, uint64_t unused3)
-{
-    (void)unused1;
-    (void)unused2;
-    (void)unused3;
-
-    return (uint64_t)VFS_Write_old(
-        (fd_t)fd,
-        (uint8_t*)buf,
-        (size_t)count
-    );
-}
+#define TCGETS 0x5401
 
 uint64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
                   uint64_t unused1, uint64_t unused2, uint64_t unused3)
@@ -52,7 +40,12 @@ uint64_t sys_close(uint64_t fd)
 
 uint64_t sys_ioctl(uint64_t fd, uint64_t req, uint64_t arg)
 {
-    return VFS_ioctl((int)fd, req, (void*)arg);
+    if ((fd == 1 || fd == 2) && req == TCGETS) {
+        if (arg) memset((void *)arg, 0, 44);
+        return 0;
+    }
+
+    return VFS_ioctl((int)fd, req, (void *)arg);
 }
 
 uint64_t sys_getdents64(uint64_t fd, uint64_t buf, uint64_t size)

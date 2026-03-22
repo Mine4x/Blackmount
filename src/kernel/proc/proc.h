@@ -114,4 +114,6 @@ int proc_create_user_image_as(uid_t owner, const uint8_t *image, size_t image_si
                               uint64_t load_vaddr, uint64_t entry_vaddr,
                               uint32_t priority, uint32_t parent);
 
+bool proc_read_from_user(int pid, void *dst, const void *user_src, size_t n);
+
 #define USER_PROGRAM_END() void __user_program_end_##__LINE__(void) {}
