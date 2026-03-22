@@ -271,7 +271,7 @@ uint64_t sys_uname(uint64_t buf_ptr)
 
     const char sysname[]    = "Blackmount";
     const char nodename[]   = "blackmount";
-    const char release[]    = "1.2.1";
+    const char release[]    = "1.2.2";
     const char version[]    = "#1";
     const char machine[]    = "x86_64";
     const char domainname[] = "(none)";
