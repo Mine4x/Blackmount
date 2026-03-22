@@ -4,6 +4,8 @@
 #include <drivers/fs/ext/ext2.h>
 #include <user/user.h>
 #include <string.h>
+#include <heap.h>
+#include <memory.h>
 #include <debug.h>
 
 #define EFAULT  14
@@ -12,6 +14,14 @@
 #define EINVAL  22
 #define ERANGE  34
 #define ENOMEM  12
+
+#define ARCH_SET_GS  0x1001
+#define ARCH_SET_FS  0x1002
+#define ARCH_GET_FS  0x1003
+#define ARCH_GET_GS  0x1004
+
+#define MSR_FS_BASE  0xC0000100
+#define MSR_GS_BASE  0xC0000101
 
 #define SYSCALL_ERR(e) ((uint64_t)(-(int64_t)(e)))
 
@@ -51,6 +61,20 @@ struct iovec {
     void   *iov_base;
     size_t  iov_len;
 };
+
+static void wrmsr(uint32_t msr, uint64_t val)
+{
+    uint32_t lo = (uint32_t)(val & 0xFFFFFFFF);
+    uint32_t hi = (uint32_t)(val >> 32);
+    __asm__ volatile("wrmsr" :: "c"(msr), "a"(lo), "d"(hi));
+}
+
+static uint64_t rdmsr(uint32_t msr)
+{
+    uint32_t lo, hi;
+    __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
+    return ((uint64_t)hi << 32) | lo;
+}
 
 static void fill_stat_from_inode(struct kernel_stat *ks, const ext2_inode_t *inode)
 {
@@ -247,7 +271,7 @@ uint64_t sys_uname(uint64_t buf_ptr)
 
     const char sysname[]    = "Blackmount";
     const char nodename[]   = "blackmount";
-    const char release[]    = "1.2.0";
+    const char release[]    = "1.2.1";
     const char version[]    = "#1";
     const char machine[]    = "x86_64";
     const char domainname[] = "(none)";
@@ -266,7 +290,7 @@ uint64_t sys_authu(uint64_t username, uint64_t password)
 {
     if (!username || !password)
         return SYSCALL_ERR(EFAULT);
-    
+
     user_authenticate((const char*)username, (const char*)password);
 }
 
@@ -314,6 +338,30 @@ uint64_t sys_exit_group(uint64_t code)
 {
     proc_exit(code);
     __builtin_unreachable();
+}
+
+uint64_t sys_arch_prctl(uint64_t code, uint64_t addr)
+{
+    switch ((int)code) {
+    case ARCH_SET_FS:
+        wrmsr(MSR_FS_BASE, addr);
+        return 0;
+    case ARCH_GET_FS:
+        if (!addr)
+            return SYSCALL_ERR(EFAULT);
+        *(uint64_t *)addr = rdmsr(MSR_FS_BASE);
+        return 0;
+    case ARCH_SET_GS:
+        wrmsr(MSR_GS_BASE, addr);
+        return 0;
+    case ARCH_GET_GS:
+        if (!addr)
+            return SYSCALL_ERR(EFAULT);
+        *(uint64_t *)addr = rdmsr(MSR_GS_BASE);
+        return 0;
+    default:
+        return SYSCALL_ERR(EINVAL);
+    }
 }
 
 uint64_t sys_stat(uint64_t path_ptr, uint64_t statbuf_ptr)
@@ -554,18 +602,56 @@ uint64_t sys_writev(uint64_t fd, uint64_t iov_ptr, uint64_t iovcnt)
     if (!iov_ptr)
         return SYSCALL_ERR(EFAULT);
 
-    struct iovec *iov = (struct iovec *)iov_ptr;
+    int pid = proc_get_current_pid();
+    size_t iov_bytes = iovcnt * sizeof(struct iovec);
+    struct iovec *kiov = (struct iovec *)kmalloc(iov_bytes);
+    if (!kiov)
+        return SYSCALL_ERR(ENOMEM);
+
+    if (!proc_read_from_user(pid, kiov, (const void *)iov_ptr, iov_bytes)) {
+        kfree(kiov);
+        return SYSCALL_ERR(EFAULT);
+    }
+
     uint64_t total = 0;
 
     for (uint64_t i = 0; i < iovcnt; i++) {
-        if (!iov[i].iov_base || iov[i].iov_len == 0)
+        if (!kiov[i].iov_base || kiov[i].iov_len == 0)
             continue;
-        int r = VFS_Write((int)fd, iov[i].iov_len, iov[i].iov_base, false);
-        if (r < 0)
+
+        if (kiov[i].iov_len > 0x100000) {
+            kfree(kiov);
             return total > 0 ? total : SYSCALL_ERR(EINVAL);
+        }
+
+        uint8_t *kbuf = (uint8_t *)kmalloc(kiov[i].iov_len);
+        if (!kbuf) {
+            kfree(kiov);
+            return total > 0 ? total : SYSCALL_ERR(ENOMEM);
+        }
+
+        if (!proc_read_from_user(pid, kbuf, kiov[i].iov_base, kiov[i].iov_len)) {
+            kfree(kbuf);
+            kfree(kiov);
+            return total > 0 ? total : SYSCALL_ERR(EFAULT);
+        }
+
+        int r;
+        if (fd == VFS_FD_STDOUT || fd == VFS_FD_STDERR)
+            r = VFS_Write_old((fd_t)fd, kbuf, kiov[i].iov_len);
+        else
+            r = VFS_Write((int)fd, kiov[i].iov_len, kbuf, false);
+
+        kfree(kbuf);
+
+        if (r < 0) {
+            kfree(kiov);
+            return total > 0 ? total : SYSCALL_ERR(EINVAL);
+        }
         total += (uint64_t)r;
     }
 
+    kfree(kiov);
     return total;
 }
 
@@ -613,4 +699,23 @@ uint64_t sys_mprotect(uint64_t addr, uint64_t length, uint64_t prot)
 {
     (void)addr; (void)length; (void)prot;
     return 0;
+}
+
+uint64_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
+                   uint64_t unused1, uint64_t unused2, uint64_t unused3)
+{
+    (void)unused1; (void)unused2; (void)unused3;
+
+    if (fd == VFS_FD_STDIN) return 0;
+
+    if (fd == VFS_FD_STDOUT || fd == VFS_FD_STDERR) {
+        uint8_t *kbuf = (uint8_t *)kmalloc(count);
+        if (!kbuf) return SYSCALL_ERR(ENOMEM);
+        memcpy(kbuf, (const void *)buf, count);
+        int r = VFS_Write_old((fd_t)fd, kbuf, count);
+        kfree(kbuf);
+        return (uint64_t)r;
+    }
+
+    return (uint64_t)VFS_Write_old((fd_t)fd, (uint8_t *)buf, count);
 }

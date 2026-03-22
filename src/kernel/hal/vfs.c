@@ -441,9 +441,18 @@ int VFS_Write_old(fd_t file, uint8_t* data, size_t size)
     case VFS_FD_STDIN:
         return 0;
     case VFS_FD_STDOUT:
+        for (size_t i = 0; i < size; i++)
+        {
+            //log_info("CON", "byte 0x%02x", (unsigned)data[i]);
+            console_putc(data[i]);
+        }
+        return size;
     case VFS_FD_STDERR:
         for (size_t i = 0; i < size; i++)
+        {
+            log_info("CON", "byte 0x%02x", (unsigned)data[i]);
             console_putc(data[i]);
+        }
         return size;
 
     case VFS_FD_DEBUG:

@@ -34,6 +34,7 @@ uint64_t sys_chdir(uint64_t path_ptr);
 
 uint64_t sys_set_tid_address(uint64_t tidptr);
 uint64_t sys_exit_group(uint64_t code);
+uint64_t sys_arch_prctl(uint64_t code, uint64_t addr);
 
 uint64_t sys_stat(uint64_t path_ptr, uint64_t statbuf_ptr);
 uint64_t sys_lstat(uint64_t path_ptr, uint64_t statbuf_ptr);
@@ -59,3 +60,5 @@ uint64_t sys_munmap(uint64_t addr, uint64_t length);
 uint64_t sys_mprotect(uint64_t addr, uint64_t length, uint64_t prot);
 
 uint64_t sys_authu(uint64_t username, uint64_t password);
+uint64_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
+                   uint64_t unused1, uint64_t unused2, uint64_t unused3);

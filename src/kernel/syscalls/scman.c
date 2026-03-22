@@ -67,6 +67,7 @@ void register_syscalls(void)
     x86_64_Syscall_RegisterHandler(63,  (SyscallHandler)sys_uname);
     x86_64_Syscall_RegisterHandler(79,  (SyscallHandler)sys_getcwd);
     x86_64_Syscall_RegisterHandler(80,  (SyscallHandler)sys_chdir);
+    x86_64_Syscall_RegisterHandler(158, (SyscallHandler)sys_arch_prctl);
     x86_64_Syscall_RegisterHandler(218, (SyscallHandler)sys_set_tid_address);
 
     x86_64_Syscall_RegisterHandler(102, (SyscallHandler)sys_getuid);

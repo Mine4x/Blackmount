@@ -2,6 +2,7 @@
 #include "framebuffer.h"
 #include "font/fontloader.h"
 #include <stdint.h>
+#include <debug.h>
 #include <stdbool.h>
 
 static uint32_t cursor_x = 0;
