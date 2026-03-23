@@ -20,6 +20,8 @@
 #include <device/stdin/device_stdin.h>
 #include <device/stdout/device_stdout.h>
 #include <block/block_mbr.h>
+#include <block/block_ramdisk.h>
+#include <mkfs/ext2_format.h>
 
 block_device_t* rootdrive;
 ext2_fs_t*      rootfs;
@@ -432,6 +434,13 @@ int VFS_Set_Pos(int fd, uint32_t pos, bool privileged)
 static void create_special_files(void)
 {
     VFS_Create("/dev", true);
+    
+    block_device_t *dev_ramdisk = ramdisk_create_blockdev("ram0", 4 * 1024 * 1024);
+    block_register(dev_ramdisk);
+    ext2_format(dev_ramdisk);
+    ext2_fs_t *dev_fs = ext2_mount(dev_ramdisk);
+    VFS_Mount("ram0", "/dev");
+    log_ok("VFS", "Created and mounted device ramdisk(/dev, ram0)");
 
     stdin_device_init("/dev/stdin");
     stdout_device_init("/dev/stdout");
@@ -448,9 +457,6 @@ static void create_special_files(void)
         log_err("VFS", "Failed to open special file 3");
     if (VFS_Open("/dev/stddbg", true) < 0)
         log_err("VFS", "Failed to open special file 4");
-
-    if (setflags((KERNEL | USER_WRITE), VFS_FD_STDOUT) < 0)
-        log_err("VFS", "Failed to set flags special file 1\n This could just be becuase it already exists");
 }
 
 void VFS_Init(void)
