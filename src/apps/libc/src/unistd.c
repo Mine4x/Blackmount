@@ -1,4 +1,4 @@
-#include <syscalls.h>
+#include <unistd.h>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -263,11 +263,6 @@ int getpid(void)
 int getppid(void)
 {
     return (int)syscall6(SYSCALL_GETPPID, 0, 0, 0, 0, 0, 0);
-}
-
-int uname(struct utsname *buf)
-{
-    return (int)syscall6(SYSCALL_UNAME, (uint64_t)buf, 0, 0, 0, 0, 0);
 }
 
 char *getcwd(char *buf, size_t size)

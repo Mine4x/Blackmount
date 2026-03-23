@@ -103,15 +103,6 @@ struct stat {
     int64_t  __unused[3];
 } __attribute__((packed));
 
-struct utsname {
-    char sysname[65];
-    char nodename[65];
-    char release[65];
-    char version[65];
-    char machine[65];
-    char domainname[65];
-};
-
 struct iovec {
     void  *iov_base;
     size_t iov_len;
@@ -251,7 +242,6 @@ uint64_t binrun(const char *path);
 
 int  getpid(void);
 int  getppid(void);
-int  uname(struct utsname *buf);
 char *getcwd(char *buf, size_t size);
 int  chdir(const char *path);
 
