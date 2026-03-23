@@ -1,37 +1,79 @@
 #include "device_tty.h"
 
-static int clear(int pid, void *arg)
-{
-    console_clear_text();
-    console_clear();
-
-    return 0;
-}
-
-static int set_color(int pid, void *arg)
+static int tty_tcgets(int pid, void *arg)
 {
     if (!arg) return -1;
-
-    tty_color_t* color = (tty_color_t*)arg;
-
-    tr_set_color(color->fg, color->bg);
-
+    struct termios t;
+    console_get_termios(&t);
+    if (!proc_write_to_user(pid, arg, &t, sizeof(struct termios)))
+        return -1;
     return 0;
 }
 
-static int read_special(int pid, void *arg)
+static int tty_tcsets(int pid, void *arg, int mode)
 {
-    read_special_event_t* event = (read_special_event_t*)arg;
+    if (!arg) return -1;
+    if (mode == 2)
+        console_tcflush(TCIFLUSH);
+    console_set_termios((const struct termios *)arg);
+    return 0;
+}
 
-    char buf[26];
-
-    console_read_special_char(&buf, event->count);
-
-    if (!proc_write_to_user(pid, event->buf, &event, sizeof(char)*26))
-    {
+static int tty_tiocgwinsz(int pid, void *arg)
+{
+    if (!arg) return -1;
+    struct winsize w;
+    console_get_winsize(&w);
+    if (!proc_write_to_user(pid, arg, &w, sizeof(struct winsize)))
         return -1;
-    }
+    return 0;
+}
 
+static int tty_tiocswinsz(int pid, void *arg)
+{
+    if (!arg) return -1;
+    console_set_winsize((const struct winsize *)arg);
+    return 0;
+}
+
+static int tty_tcflsh(int pid, void *arg)
+{
+    int queue = arg ? *(int *)arg : TCIOFLUSH;
+    console_tcflush(queue);
+    return 0;
+}
+
+static int tty_tiocgpgrp(int pid, void *arg)
+{
+    if (!arg) return -1;
+    int pgrp = console_get_pgrp();
+    if (!proc_write_to_user(pid, arg, &pgrp, sizeof(int)))
+        return -1;
+    return 0;
+}
+
+static int tty_tiocspgrp(int pid, void *arg)
+{
+    if (!arg) return -1;
+    console_set_pgrp(*(int *)arg);
+    return 0;
+}
+
+static int tty_tiocoutq(int pid, void *arg)
+{
+    if (!arg) return -1;
+    int pending = 0;
+    if (!proc_write_to_user(pid, arg, &pending, sizeof(int)))
+        return -1;
+    return 0;
+}
+
+static int tty_fionread(int pid, void *arg)
+{
+    if (!arg) return -1;
+    int avail = (int)console_get_length();
+    if (!proc_write_to_user(pid, arg, &avail, sizeof(int)))
+        return -1;
     return 0;
 }
 
@@ -39,15 +81,18 @@ static int dispatcher(int pid, uint64_t req, void *arg)
 {
     switch (req)
     {
-    case TTY_CLEAR:
-        return clear(pid, arg);
-    case TTY_COLOR:
-        return set_color(pid, arg);
-    case TTY_SPECIAL_READ:
-        return read_special(pid, arg);
-    
-    default:
-        return -1;
+    case TCGETS:     return tty_tcgets(pid, arg);
+    case TCSETS:     return tty_tcsets(pid, arg, 0);
+    case TCSETSW:    return tty_tcsets(pid, arg, 1);
+    case TCSETSF:    return tty_tcsets(pid, arg, 2);
+    case TCFLSH:     return tty_tcflsh(pid, arg);
+    case TIOCGWINSZ: return tty_tiocgwinsz(pid, arg);
+    case TIOCSWINSZ: return tty_tiocswinsz(pid, arg);
+    case TIOCGPGRP:  return tty_tiocgpgrp(pid, arg);
+    case TIOCSPGRP:  return tty_tiocspgrp(pid, arg);
+    case TIOCOUTQ:   return tty_tiocoutq(pid, arg);
+    case FIONREAD:   return tty_fionread(pid, arg);
+    default:         return -1;
     }
 }
 
@@ -57,13 +102,11 @@ device_t* tty_device_init(const char* path)
         return NULL;
 
     device_t* dev = kmalloc(sizeof(device_t));
-
     if (!dev) return NULL;
 
-    dev->path = path;
+    dev->path     = path;
     dev->dispatch = &dispatcher;
 
     device_register(dev);
-
     return dev;
 }

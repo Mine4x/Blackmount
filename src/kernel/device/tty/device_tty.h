@@ -1,26 +1,20 @@
 #ifndef DEV_TTY_H
 #define DEV_TTY_H
 
-#define TTY_CLEAR 1
-#define TTY_COLOR 2
-#define TTY_SPECIAL_READ 3
+#define TCGETS      0x5401
+#define TCSETS      0x5402
+#define TCSETSW     0x5403
+#define TCSETSF     0x5404
+#define TCFLSH      0x540B
+#define TIOCGPGRP   0x540F
+#define TIOCSPGRP   0x5410
+#define TIOCOUTQ    0x5411
+#define TIOCGWINSZ  0x5413
+#define TIOCSWINSZ  0x5414
+#define FIONREAD    0x541B
 
 #include <stdint.h>
 #include <stddef.h>
-
-typedef struct
-{
-    uint32_t fg;
-    uint32_t bg;
-} tty_color_t;
-
-typedef struct
-{
-    size_t count;
-    char* buf;
-} read_special_event_t;
-
-
 #include <device/device.h>
 #include <console/console.h>
 #include <fb/textrenderer.h>

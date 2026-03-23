@@ -19,18 +19,49 @@ static int  c_escape_pos  = 0;
 static uint64_t c_special_buf[26];
 static int c_special_buf_pos = 0;
 
+static struct termios c_termios = {
+    .c_iflag = ICRNL | IXON,
+    .c_oflag = OPOST | ONLCR,
+    .c_cflag = CS8 | CREAD | CLOCAL,
+    .c_lflag = ICANON | ECHO | ECHOE | ECHOK | ISIG | IEXTEN,
+    .c_line  = 0,
+    .c_cc    = {
+        [VINTR]  = 3,
+        [VQUIT]  = 28,
+        [VERASE] = 127,
+        [VKILL]  = 21,
+        [VEOF]   = 4,
+        [VTIME]  = 0,
+        [VMIN]   = 1,
+        [VSWTC]  = 0,
+        [VSTART] = 17,
+        [VSTOP]  = 19,
+        [VSUSP]  = 26,
+        [VEOL]   = 0,
+    },
+};
+
+static struct winsize c_winsize = {
+    .ws_row    = 25,
+    .ws_col    = 80,
+    .ws_xpixel = 0,
+    .ws_ypixel = 0,
+};
+
+static int c_pgrp = 0;
+
 void console_add_special_char(uint64_t sc)
 {
-    if (c_special_buf_pos > 26)
+    if (c_special_buf_pos >= 26)
         return;
-    
-    c_special_buf[c_escape_pos] = sc;
-    c_escape_pos++;
+
+    c_special_buf[c_special_buf_pos] = sc;
+    c_special_buf_pos++;
 }
 
 void console_reset_special_char()
 {
-    c_special_buf_pos == 0;
+    c_special_buf_pos = 0;
 
     for (int i = 0; i < 26; i++)
     {
@@ -40,10 +71,9 @@ void console_reset_special_char()
 
 void console_read_special_char(char* buf, size_t count)
 {
-    int written = 0;
-    for (int i = 0; i < 26 && i < count; i++)
+    for (int i = 0; i < 26 && (size_t)i < count; i++)
     {
-        buf[i] = c_special_buf[i];
+        buf[i] = (char)(c_special_buf[i] & 0xFF);
     }
 }
 
@@ -305,4 +335,51 @@ size_t console_get_length(void)
         return (size_t)-1;
 
     return input->length;
+}
+
+void console_get_termios(struct termios *t)
+{
+    if (!t)
+        return;
+    *t = c_termios;
+}
+
+void console_set_termios(const struct termios *t)
+{
+    if (!t)
+        return;
+    c_termios = *t;
+}
+
+void console_get_winsize(struct winsize *w)
+{
+    if (!w)
+        return;
+    *w = c_winsize;
+}
+
+void console_set_winsize(const struct winsize *w)
+{
+    if (!w)
+        return;
+    c_winsize = *w;
+}
+
+void console_tcflush(int queue)
+{
+    if (!input)
+        return;
+
+    if (queue == TCIFLUSH || queue == TCIOFLUSH)
+        input->length = 0;
+}
+
+int console_get_pgrp(void)
+{
+    return c_pgrp;
+}
+
+void console_set_pgrp(int pgrp)
+{
+    c_pgrp = pgrp;
 }
