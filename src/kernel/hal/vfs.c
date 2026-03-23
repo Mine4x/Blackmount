@@ -26,6 +26,8 @@ ext2_fs_t*      rootfs;
 
 bool mounted = false;
 
+static vfs_mount_t mount_table[MAX_MOUNTS];
+
 const char* special_paths[] = {"/dev/stdin", "/dev/stdout", "/dev/stderr", "/dev/stddbg"};
 const int sp_len = sizeof(special_paths) / sizeof(special_paths[0]);
 
@@ -83,31 +85,102 @@ static uid_t vfs_caller_uid(void)
     return uid;
 }
 
-static bool vfs_access_ok(const char* path, int mask, bool privileged)
+static ext2_fs_t* resolve_fs(const char* path, const char** out_path)
+{
+    ext2_fs_t*  best_fs  = rootfs;
+    const char* best_rel = path;
+    size_t      best_len = 0;
+
+    for (int i = 0; i < MAX_MOUNTS; i++) {
+        if (!mount_table[i].active)
+            continue;
+
+        size_t mplen = strlen(mount_table[i].mountpoint);
+        if (mplen <= best_len)
+            continue;
+
+        if (strncmp(path, mount_table[i].mountpoint, mplen) == 0) {
+            if (path[mplen] == '/' || path[mplen] == '\0') {
+                best_fs  = mount_table[i].fs;
+                best_rel = (path[mplen] == '/') ? path + mplen : "/";
+                best_len = mplen;
+            }
+        }
+    }
+
+    *out_path = best_rel;
+    return best_fs;
+}
+
+static bool vfs_access_ok(ext2_fs_t* fs, const char* path, int mask, bool privileged)
 {
     if (privileged)
         return true;
     uid_t uid = vfs_caller_uid();
     if (user_is_root(uid))
         return true;
-    return ext2_access(rootfs, path, uid, mask) == EXT2_SUCCESS;
+    return ext2_access(fs, path, uid, mask) == EXT2_SUCCESS;
+}
+
+int VFS_Mount(const char* source, const char* target)
+{
+    block_device_t* dev = block_get(source);
+    if (!dev)
+        return -1;
+
+    ext2_fs_t* fs = ext2_mount(dev);
+    if (!fs)
+        return -1;
+
+    for (int i = 0; i < MAX_MOUNTS; i++) {
+        if (!mount_table[i].active) {
+            strncpy(mount_table[i].mountpoint, target, sizeof(mount_table[i].mountpoint) - 1);
+            mount_table[i].mountpoint[sizeof(mount_table[i].mountpoint) - 1] = '\0';
+            mount_table[i].fs     = fs;
+            mount_table[i].dev    = dev;
+            mount_table[i].active = true;
+            log_ok("VFS", "Mounted %s at %s", source, target);
+            return 0;
+        }
+    }
+
+    ext2_unmount(fs);
+    log_err("VFS", "VFS_Mount: mount table full");
+    return -1;
+}
+
+int VFS_Unmount_Path(const char* target)
+{
+    for (int i = 0; i < MAX_MOUNTS; i++) {
+        if (mount_table[i].active && strcmp(mount_table[i].mountpoint, target) == 0) {
+            ext2_unmount(mount_table[i].fs);
+            mount_table[i].active = false;
+            log_ok("VFS", "Unmounted %s", target);
+            return 0;
+        }
+    }
+    log_err("VFS", "VFS_Unmount_Path: %s not found", target);
+    return -1;
 }
 
 int VFS_Create(const char* path, bool isDir)
 {
-    if (!vfs_access_ok(path, ACCESS_WRITE, false)) {
+    const char* rel;
+    ext2_fs_t*  fs = resolve_fs(path, &rel);
+
+    if (!vfs_access_ok(fs, rel, ACCESS_WRITE, false)) {
         log_err("VFS", "VFS_Create: permission denied for %s", path);
         return -1;
     }
 
     if (isDir) {
-        int result = ext2_mkdir(rootfs, path);
+        int result = ext2_mkdir(fs, rel);
         if (result == EXT2_SUCCESS)
             return 0;
         return -1;
     }
 
-    int result = ext2_create(rootfs, path, 0644);
+    int result = ext2_create(fs, rel, 0644);
     if (result == EXT2_SUCCESS)
         return 0;
     return -1;
@@ -128,7 +201,10 @@ int VFS_Open(const char* path, bool privileged)
     if (response != -1 && !privileged)
         return response;
 
-    if (!vfs_access_ok(path, ACCESS_READ, privileged)) {
+    const char* rel;
+    ext2_fs_t*  fs = resolve_fs(path, &rel);
+
+    if (!vfs_access_ok(fs, rel, ACCESS_READ, privileged)) {
         log_err("VFS", "VFS_Open: permission denied for %s", path);
         return -1;
     }
@@ -136,10 +212,10 @@ int VFS_Open(const char* path, bool privileged)
     uid_t caller_uid = privileged ? UID_ROOT : vfs_caller_uid();
 
     ext2_inode_t inode;
-    if (ext2_stat(rootfs, path, &inode) == EXT2_SUCCESS &&
+    if (ext2_stat(fs, rel, &inode) == EXT2_SUCCESS &&
         (inode.i_mode & 0xF000) == EXT2_S_IFDIR)
     {
-        ext2_dir_iter_t* iter = ext2_opendir(rootfs, path);
+        ext2_dir_iter_t* iter = ext2_opendir(fs, rel);
         if (!iter)
             return -1;
 
@@ -148,6 +224,7 @@ int VFS_Open(const char* path, bool privileged)
                 open_files[i].path     = path;
                 open_files[i].file     = NULL;
                 open_files[i].dir_iter = iter;
+                open_files[i].fs       = fs;
                 open_files[i].is_dir   = true;
                 open_files[i].exists   = true;
                 open_files[i].is_dev   = false;
@@ -163,7 +240,7 @@ int VFS_Open(const char* path, bool privileged)
         return -1;
     }
 
-    ext2_file_t* ext2_file = ext2_open(rootfs, path);
+    ext2_file_t* ext2_file = ext2_open(fs, rel);
     if (!ext2_file)
         return -1;
 
@@ -172,6 +249,7 @@ int VFS_Open(const char* path, bool privileged)
             open_files[i].path     = path;
             open_files[i].file     = ext2_file;
             open_files[i].dir_iter = NULL;
+            open_files[i].fs       = fs;
             open_files[i].is_dir   = false;
             open_files[i].exists   = true;
             open_files[i].owner    = caller_uid;
@@ -223,8 +301,11 @@ int VFS_Write(int fd, size_t count, void* buf, bool privileged)
     if (!privileged && open_files[fd].pid != proc_get_current_pid())
         return -1;
 
+    const char* rel;
+    resolve_fs(open_files[fd].path, &rel);
+
     if (!open_files[fd].is_dev
-        && !vfs_access_ok(open_files[fd].path, ACCESS_WRITE, privileged))
+        && !vfs_access_ok(open_files[fd].fs, rel, ACCESS_WRITE, privileged))
         return -1;
 
     if (!open_files[fd].file)
@@ -381,7 +462,11 @@ void VFS_Init(void)
         open_files[i].file     = NULL;
         open_files[i].dir_iter = NULL;
         open_files[i].is_dir   = false;
+        open_files[i].fs       = NULL;
     }
+
+    for (int i = 0; i < MAX_MOUNTS; i++)
+        mount_table[i].active = false;
 
     const char* rd = config_get("bootdisk", "iso");
     if (strcmp(rd, "iso") == 0) {
@@ -437,6 +522,13 @@ void VFS_Unmount(void)
 {
     if (mounted)
         ext2_unmount(rootfs);
+
+    for (int i = 0; i < MAX_MOUNTS; i++) {
+        if (mount_table[i].active) {
+            ext2_unmount(mount_table[i].fs);
+            mount_table[i].active = false;
+        }
+    }
 }
 
 int VFS_Write_old(fd_t file, uint8_t* data, size_t size)
@@ -481,7 +573,9 @@ uint64_t sys_execve(uint64_t path, uint64_t argv, uint64_t envp)
         return (uint64_t)-1;
 
     if (!user_is_root(caller_uid)) {
-        if (ext2_access(rootfs, prog, caller_uid, ACCESS_EXEC) != EXT2_SUCCESS)
+        const char* rel;
+        ext2_fs_t*  fs = resolve_fs(prog, &rel);
+        if (ext2_access(fs, rel, caller_uid, ACCESS_EXEC) != EXT2_SUCCESS)
             return (uint64_t)-1;
     }
 

@@ -34,9 +34,17 @@ struct linux_dirent64 {
 } __attribute__((packed));
 
 typedef struct {
+    char            mountpoint[256];
+    ext2_fs_t*      fs;
+    block_device_t* dev;
+    bool            active;
+} vfs_mount_t;
+
+typedef struct {
     const char*      path;
     ext2_file_t*     file;
     ext2_dir_iter_t* dir_iter;
+    ext2_fs_t*       fs;
     disk_type_t      disk_type;
     file_flags_t     flags;
     int              pid;
@@ -52,6 +60,7 @@ typedef struct {
 #define VFS_FD_STDERR   2
 #define VFS_FD_DEBUG    3
 #define MAX_OPEN_FILES  100
+#define MAX_MOUNTS      16
 
 int  VFS_Create(const char* path, bool isDir);
 int  VFS_Open(const char* path, bool privileged);
@@ -62,6 +71,8 @@ int  VFS_Set_Pos(int fd, uint32_t pos, bool privileged);
 int  VFS_GetDents64(int fd, struct linux_dirent64* buf, size_t count);
 int  VFS_ioctl(int fd, uint64_t req, void* arg);
 int  VFS_Write_old(fd_t file, uint8_t* data, size_t size);
+int  VFS_Mount(const char* source, const char* target);
+int  VFS_Unmount_Path(const char* target);
 void VFS_Init(void);
 void VFS_Unmount(void);
 
