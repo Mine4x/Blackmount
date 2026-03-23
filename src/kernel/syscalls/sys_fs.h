@@ -7,6 +7,13 @@
 
 #define TCGETS 0x5401
 
+#define O_RDONLY  0
+#define O_WRONLY  1
+#define O_RDWR    2
+#define O_CREAT   64    // 0100 octal
+#define O_TRUNC   512   // 01000 octal
+#define O_APPEND  1024  // 02000 octal
+
 uint64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
                   uint64_t unused1, uint64_t unused2, uint64_t unused3)
 {
@@ -28,9 +35,17 @@ uint64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
     return count;
 }
 
-uint64_t sys_open(uint64_t path)
+
+uint64_t sys_open(uint64_t path, uint64_t flags)
 {
-    return (uint64_t)VFS_Open((const char*)path, false);
+    if (flags & O_CREAT)
+    {
+        int result = VFS_Create((const char*)path, false);
+        if (result < 0)
+            return (uint64_t)-1;
+    }
+
+    return (uint64_t)VFS_Open((const char*)path, (flags & O_RDWR) || (flags & O_WRONLY));
 }
 
 uint64_t sys_close(uint64_t fd)

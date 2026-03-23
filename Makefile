@@ -36,17 +36,23 @@ $(BUILD_DIR)/bmos.iso: kernel harddisk_image
 #
 #
 harddisk_image: $(BUILD_DIR)/harddisk.img
-$(BUILD_DIR)/harddisk.img: always
+$(BUILD_DIR)/harddisk.img: always apps
 	@dd if=/dev/zero of=$@ bs=512 count=133120 status=none
 	@parted -s $@ mklabel gpt mkpart primary ext2 2048s 133086s
 	@mkfs.ext2 -L BMOSHDD -E offset=$$((2048 * 512)) $@ >/dev/null
 	@mkdir -p /tmp/bmosmnt
 	@sudo mount -o loop,offset=$$((2048 * 512)) $@ /tmp/bmosmnt
 	@sudo mkdir -p /tmp/bmosmnt/bin
+	@sudo mkdir -p /tmp/nbosmnt/usr/include/libc/include
+	@sudo mkdir -p /tmp/bmosmnt/usr/lib/crt
+	@sudo mkdir -p /tmp/bmosmnt/usr/lib/libc
 	@sudo cp -r target/* /tmp/bmosmnt
 	@for f in $(BUILD_DIR)/apps/*.bin; do \
 		sudo cp $$f /tmp/bmosmnt/bin/$$(basename $${f%.bin}); \
 	done
+	@sudo cp -r src/apps/libc/include/* /tmp/nbosmnt/usr/include/libc/include
+	@sudo cp $(BUILD_DIR)/libc/crt0.o /tmp/bmosmnt/usr/lib/crt
+	@sudo cp $(BUILD_DIR)/libc/libc.a /tmp/bmosmnt/usr/lib/libc
 	@sudo umount /tmp/bmosmnt
 	@echo "--> Created: $@"
 
