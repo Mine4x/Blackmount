@@ -126,55 +126,54 @@ void fb_scroll(uint32_t pixels, uint32_t bg_color) {
         log_warn(FB_MODULE, "fb_scroll called but framebuffer not initialized");
         return;
     }
-    
+
     if (fb_bpp != 32) {
         log_warn(FB_MODULE, "fb_scroll only supports 32bpp");
         return;
     }
-    
+
     if (pixels == 0) {
         return;
     }
-    
+
     if (pixels >= fb_height) {
-        // Scrolling entire screen, just clear it
         fb_clear(bg_color);
         return;
     }
 
-    uint32_t row_size = fb_pitch;
-    uint32_t scroll_bytes = pixels * row_size;
-    uint32_t remaining_bytes = (fb_height - pixels) * row_size;
-    
-    // Validate that we're not going out of bounds
-    if (scroll_bytes > fb_size || remaining_bytes > fb_size) {
-        log_err(FB_MODULE, "Scroll would exceed framebuffer bounds");
-        return;
+    uint32_t row_size = fb_pitch;               // bytes per row
+    uint32_t remaining_rows = fb_height - pixels;
+    uint8_t *src = fb_addr + pixels * row_size;
+    uint8_t *dst = fb_addr;
+
+    // Copy row by row for better performance
+    for (uint32_t y = 0; y < remaining_rows; y++) {
+        memcpy(dst, src, row_size);
+        dst += row_size;
+        src += row_size;
     }
-    
-    // Move framebuffer memory up
-    // Use memmove to handle overlapping regions safely
-    memmove(
-        fb_addr,                          // destination
-        fb_addr + scroll_bytes,          // source
-        remaining_bytes                   // size
-    );
-    
-    // Clear bottom area that was scrolled away
-    uint8_t *bottom = fb_addr + remaining_bytes;
-    uint32_t clear_bytes = scroll_bytes;
-    
-    // Validate clear range
-    if ((uint64_t)(bottom - fb_addr) + clear_bytes > fb_size) {
-        log_err(FB_MODULE, "Clear would exceed framebuffer bounds");
-        return;
-    }
-    
-    // Clear using 32-bit writes for efficiency
+
+    // Clear bottom rows
+    uint8_t *bottom = fb_addr + remaining_rows * row_size;
+    uint32_t total_pixels_to_clear = pixels * (row_size / 4);
     uint32_t *bottom32 = (uint32_t*)bottom;
-    uint32_t pixels_to_clear = clear_bytes / 4;
-    
-    for (uint32_t i = 0; i < pixels_to_clear; i++) {
+
+    // Loop unrolling for faster clearing
+    uint32_t i = 0;
+    uint32_t unroll_count = total_pixels_to_clear / 8;
+    for (uint32_t u = 0; u < unroll_count; u++) {
+        bottom32[i++] = bg_color;
+        bottom32[i++] = bg_color;
+        bottom32[i++] = bg_color;
+        bottom32[i++] = bg_color;
+        bottom32[i++] = bg_color;
+        bottom32[i++] = bg_color;
+        bottom32[i++] = bg_color;
+        bottom32[i++] = bg_color;
+    }
+
+    // Clear any remaining pixels
+    for (; i < total_pixels_to_clear; i++) {
         bottom32[i] = bg_color;
     }
 }
