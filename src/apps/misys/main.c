@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <syscalls.h>
+#include <unistd.h>
 #include "log.h"
 #include "manager.h"
 #include "parser.h"

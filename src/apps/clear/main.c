@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <syscalls.h>
+#include <unistd.h>
 #include <dev/console.h>
 
 #define TTY_CLEAR 1

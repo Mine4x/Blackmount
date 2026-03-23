@@ -1,7 +1,7 @@
 #ifndef PARSER_H
 #define PARSER_H
 
-#include <syscalls.h>
+#include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
 
