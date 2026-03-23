@@ -1,5 +1,5 @@
 # LibC for Blackmount OS
 
-This is a temporary small libc for compiling programms to test the OS.
+The Offical LibC for Blackmount OS
 #
-This will be replaced by an already established libc later in development.
+This is still a w.i.p.
