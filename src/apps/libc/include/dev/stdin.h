@@ -1,7 +1,7 @@
 #ifndef STDIN_H
 #define STDIN_H
 
-#include <syscalls.h>
+#include <unistd.h>
 
 #define STDIN_RMC 1
 #define STDIN_CLEAR 2

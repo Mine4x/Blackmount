@@ -1,7 +1,7 @@
 #ifndef FB_H
 #define FB_H
 
-#include <syscalls.h>
+#include <unistd.h>
 
 #define FB_GET_INFO 1
 

@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/utsname.h>
 
 #include <pathutil.h>
 

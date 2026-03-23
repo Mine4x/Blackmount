@@ -1,8 +1,9 @@
 #ifndef CONSOLE_H
 #define CONSOLE_H
 
-#include <syscalls.h>
+#include <unistd.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define TTY_CLEAR 1
 #define TTY_COLOR 2

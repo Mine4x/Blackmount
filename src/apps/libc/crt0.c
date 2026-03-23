@@ -1,5 +1,3 @@
-#include <syscalls.h>
-
 extern int main(int argc, char **argv, char **envp);
 
 void __attribute__((naked)) _start()

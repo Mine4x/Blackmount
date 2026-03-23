@@ -2,7 +2,7 @@
 #define STDOUT_H
 
 #include <stddef.h>
-#include <syscalls.h>
+#include <unistd.h>
 
 #define STDOUT_WRITE 1
 #define STDOUT_PUTC 2
