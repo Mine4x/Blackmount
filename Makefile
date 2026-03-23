@@ -34,7 +34,7 @@ $(BUILD_DIR)/bmos.iso: kernel harddisk_image
 #
 # Hard disk image
 #
-# Hard disk pretends to be a root drive to test systems.
+#
 harddisk_image: $(BUILD_DIR)/harddisk.img
 $(BUILD_DIR)/harddisk.img: always
 	@dd if=/dev/zero of=$@ bs=512 count=133120 status=none
@@ -42,8 +42,6 @@ $(BUILD_DIR)/harddisk.img: always
 	@mkfs.ext2 -L BMOSHDD -E offset=$$((2048 * 512)) $@ >/dev/null
 	@mkdir -p /tmp/bmosmnt
 	@sudo mount -o loop,offset=$$((2048 * 512)) $@ /tmp/bmosmnt
-	@sudo mkdir -p /tmp/bmosmnt/mydir
-	@sudo mkdir -p /tmp/bmosmnt/dev
 	@sudo mkdir -p /tmp/bmosmnt/bin
 	@sudo cp -r target/* /tmp/bmosmnt
 	@for f in $(BUILD_DIR)/apps/*.bin; do \
