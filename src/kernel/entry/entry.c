@@ -32,13 +32,14 @@
 #include <device/device.h>
 #include <console/console.h>
 #include <user/user.h>
+#include <module/module.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 
 static void ok(const char* string)
 {
-    //printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
+    printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
 }
 
 static void fail(const char* string) {
@@ -100,6 +101,13 @@ void kmain(void)
     pci_init();
     log_ok("Boot", "Initialized pci");
     ok("Initialized PCI");
+
+    if (module_init() < 0)
+    {
+        panic("Kernel Boot", "Unable to initialize modules");
+    }
+    log_ok("Boot", "Initialized modules");
+    ok("Initialized modules");
 
     hid_keyboard_init(); // Works on some keyboards but not others; Further testing using more keyboard required
 
