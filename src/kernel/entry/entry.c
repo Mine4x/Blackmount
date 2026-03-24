@@ -33,6 +33,7 @@
 #include <console/console.h>
 #include <user/user.h>
 #include <module/module.h>
+#include <drivers/usb/xhci/xhci_mod.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -109,26 +110,8 @@ void kmain(void)
     log_ok("Boot", "Initialized modules");
     ok("Initialized modules");
 
-    hid_keyboard_init(); // Works on some keyboards but not others; Further testing using more keyboard required
-
-    x86_64_EnableInterrupts();
-    int response = xhci_init_device();
-    if (response == 0) {
-        log_ok("Boot", "Initialized xHCI");
-        ok("Initialized xHCI");
-        response = xhci_start_device();
-        if (response == 0) {
-            log_ok("Boot", "Started xHCI");
-            ok("Started xHCI");
-        } else {
-            log_err("Boot", "xHCI init exited with error: %d", response);
-            fail("Unable to start xHCI");
-        }
-    } else {
-        log_err("Boot", "xHCI init exited with error: %d", response);
-        fail("Unable to initialize xHCI");
-    }
-    x86_64_DisableInterrupts();
+    xhci_create_mod();
+    module_start();
 
     loadConfig();
     log_ok("Boot", "Loaded Kernel Config");
