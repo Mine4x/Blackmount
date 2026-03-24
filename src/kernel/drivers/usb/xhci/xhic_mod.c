@@ -1,6 +1,7 @@
 #include <module/module.h>
 #include "hid_keyboard.h"
 #include "xhci.h"
+#include "xhci_mod.h"
 #include <arch/x86_64/io.h>
 #include <debug.h>
 #include <heap.h>
@@ -30,7 +31,7 @@ static int __mod_start(void)
     x86_64_DisableInterrupts();
 }
 
-static void __mod_exit() {return;}
+static void __mod_exit(void) { return; }
 
 int xhci_create_mod(void)
 {
@@ -41,7 +42,8 @@ int xhci_create_mod(void)
         return -1;
     }
 
-    mod->name = "xHCI";
+    strncpy(mod->name, "xhci", sizeof(mod->name) - 1);
+    mod->name[sizeof(mod->name) - 1] = '\0';
     mod->start = &__mod_start;
     mod->exit = &__mod_exit;
 

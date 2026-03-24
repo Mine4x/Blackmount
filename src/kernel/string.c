@@ -111,3 +111,67 @@ int strncmp(const char *s1, const char *s2, size_t n) {
 
     return (unsigned char)s1[i] - (unsigned char)s2[i];
 }
+
+char* strtok(char* str, const char* delim)
+{
+    static char* next;  // Internal state for subsequent calls
+    if (str)
+        next = str;     // Initialize on first call
+    if (!next)
+        return NULL;    // No more tokens
+
+    // Skip leading delimiters
+    while (*next)
+    {
+        const char* d = delim;
+        int is_delim = 0;
+        while (*d)
+        {
+            if (*next == *d)
+            {
+                is_delim = 1;
+                break;
+            }
+            d++;
+        }
+        if (!is_delim)
+            break;
+        next++;
+    }
+
+    if (*next == '\0')  // No more tokens
+    {
+        next = NULL;
+        return NULL;
+    }
+
+    // Start of token
+    char* start = next;
+
+    // Find the end of the token
+    while (*next)
+    {
+        const char* d = delim;
+        int is_delim = 0;
+        while (*d)
+        {
+            if (*next == *d)
+            {
+                is_delim = 1;
+                break;
+            }
+            d++;
+        }
+        if (is_delim)
+        {
+            *next = '\0';
+            next++;
+            return start;
+        }
+        next++;
+    }
+
+    // Last token (no delimiter at end)
+    next = NULL;
+    return start;
+}

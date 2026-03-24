@@ -34,6 +34,9 @@
 #include <user/user.h>
 #include <module/module.h>
 #include <drivers/usb/xhci/xhci_mod.h>
+#include <drivers/disk/ata_mod.h>
+#include <drivers/disk/floppy_mod.h>
+#include <drivers/pci/pci_mod.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
@@ -99,9 +102,9 @@ void kmain(void)
     log_ok("Boot", "Initialized acpi");
     ok("Initialized ACPI");
 
-    pci_init();
-    log_ok("Boot", "Initialized pci");
-    ok("Initialized PCI");
+    loadConfig();
+    log_ok("Boot", "Loaded Kernel Config");
+    ok("Loaded Kernel Config");
 
     if (module_init() < 0)
     {
@@ -110,12 +113,14 @@ void kmain(void)
     log_ok("Boot", "Initialized modules");
     ok("Initialized modules");
 
+    pci_create_mod();
     xhci_create_mod();
-    module_start();
+    ata_create_mod();
+    floppy_create_mod();
 
-    loadConfig();
-    log_ok("Boot", "Loaded Kernel Config");
-    ok("Loaded Kernel Config");
+    module_disable_others(config_get("enabled_mods", "xhci,pci"));
+
+    module_start();
 
     if (user_init() < 0)
     {
