@@ -1,6 +1,5 @@
 #include <termios.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
 
 static int tty_open(void)

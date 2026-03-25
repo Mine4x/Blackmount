@@ -32,13 +32,18 @@
 #include <device/device.h>
 #include <console/console.h>
 #include <user/user.h>
+#include <module/module.h>
+#include <drivers/usb/xhci/xhci_mod.h>
+#include <drivers/disk/ata_mod.h>
+#include <drivers/disk/floppy_mod.h>
+#include <drivers/pci/pci_mod.h>
 
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 
 static void ok(const char* string)
 {
-    //printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
+    printf("[  \x1b[32mOK\x1b[0m  ] %s\n", string);
 }
 
 static void fail(const char* string) {
@@ -97,34 +102,25 @@ void kmain(void)
     log_ok("Boot", "Initialized acpi");
     ok("Initialized ACPI");
 
-    pci_init();
-    log_ok("Boot", "Initialized pci");
-    ok("Initialized PCI");
-
-    hid_keyboard_init(); // Works on some keyboards but not others; Further testing using more keyboard required
-
-    x86_64_EnableInterrupts();
-    int response = xhci_init_device();
-    if (response == 0) {
-        log_ok("Boot", "Initialized xHCI");
-        ok("Initialized xHCI");
-        response = xhci_start_device();
-        if (response == 0) {
-            log_ok("Boot", "Started xHCI");
-            ok("Started xHCI");
-        } else {
-            log_err("Boot", "xHCI init exited with error: %d", response);
-            fail("Unable to start xHCI");
-        }
-    } else {
-        log_err("Boot", "xHCI init exited with error: %d", response);
-        fail("Unable to initialize xHCI");
-    }
-    x86_64_DisableInterrupts();
-
     loadConfig();
     log_ok("Boot", "Loaded Kernel Config");
     ok("Loaded Kernel Config");
+
+    if (module_init() < 0)
+    {
+        panic("Kernel Boot", "Unable to initialize modules");
+    }
+    log_ok("Boot", "Initialized modules");
+    ok("Initialized modules");
+
+    pci_create_mod();
+    xhci_create_mod();
+    ata_create_mod();
+    floppy_create_mod();
+
+    module_disable_others(config_get("enabled_mods", "xhci,pci"));
+
+    module_start();
 
     if (user_init() < 0)
     {
