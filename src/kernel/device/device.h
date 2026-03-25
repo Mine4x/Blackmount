@@ -9,11 +9,23 @@ typedef int (*device_dispatch)(
     void *arg
 );
 
+typedef int (*device_read)(
+    size_t count,
+    void* buf
+);
+
+typedef int (*device_write)(
+    size_t count,
+    void* buf
+);
+
 typedef struct device
 {
     const char* path;
 
     device_dispatch dispatch;
+    device_write write;
+    device_read read;
 } device_t;
 
 void device_init(void);
