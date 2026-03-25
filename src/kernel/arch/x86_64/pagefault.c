@@ -79,6 +79,14 @@ void x86_64_PageFault_Handler(Registers* regs)
     log_debug(MODULE, "  CS=0x%04lx  SS=0x%04lx", regs->cs, regs->ss);
     log_debug(MODULE, "  Error code: 0x%lx", err);
     log_crit(MODULE, "Cannot recover - halting system");
+    
+    if (user)
+    {
+        printf("Segmentation fault(CPU dumped)\n");
+        proc_exit(-1);
+        return;
+    }
+
     panic("Pagefault exception",
           "Pagefault triggered\nIf you are running on qemu check the output for more information.");
 }

@@ -4,7 +4,9 @@
 #include "io.h"
 #include <panic/panic.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stddef.h>
+#include <proc/proc.h>
 #include <debug.h>
 
 #define MODULE          "ISR"
@@ -64,6 +66,8 @@ void x86_64_ISR_Handler(Registers* regs)
         log_err(MODULE, "Unhandled interrupt %d!", regs->interrupt);
     else 
     {
+        int user = (regs->cs & 0x3) == 3;
+        
         log_crit(MODULE, "Unhandled exception %d %s", regs->interrupt, g_Exceptions[regs->interrupt]);
         log_crit(MODULE, "  rax=%016lx  rbx=%016lx  rcx=%016lx  rdx=%016lx",
                  regs->rax, regs->rbx, regs->rcx, regs->rdx);
@@ -81,6 +85,13 @@ void x86_64_ISR_Handler(Registers* regs)
 
         log_crit(MODULE, "  interrupt=%x  errorcode=%lx", regs->interrupt, regs->error);
         log_crit(MODULE, "KERNEL PANIC!");
+        
+        if (user)
+        {
+            printf("Process caused unhandled exception %s(CPU dumped)\n", g_Exceptions[regs->interrupt]);
+            proc_exit(-1);
+            return;
+        }
 
         panic("ISR", "Unhandled exception\nIf you are running on qemu check the output for more information.");
     }
