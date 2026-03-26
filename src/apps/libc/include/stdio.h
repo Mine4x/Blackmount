@@ -21,6 +21,7 @@ void scanf(const char* fmt, ...);
 
 int itoa(int value, char *buf);
 int snprintf(char *out, int size, const char *fmt, ...);
+int sprintf(char *str, const char *format, ...);
 int atoi(const char *s);
 
 #endif

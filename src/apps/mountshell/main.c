@@ -8,6 +8,10 @@
 
 #include <pathutil.h>
 
+#include "parser.h"
+
+#define VERSION "1.0.0"
+
 #define MAX_ARGS    32
 #define INPUT_SIZE  256
 #define MAX_ENV     32
@@ -150,6 +154,9 @@ static void binary_check_and_execute(const char *prefix, char *input)
         const char *pwd  = get_env("PWD");
         const char *home = get_env("HOME");
         build_path(ipath, pwd ? pwd : "/", argv[0], home);
+    } else if (argv[0][0] == '/') {
+        strncpy(ipath, argv[0], PATH_SIZE - 1);
+        ipath[PATH_SIZE - 1] = '\0';
     } else {
         strncpy(ipath, prefix, PATH_SIZE - 1);
         ipath[PATH_SIZE - 1] = '\0';
@@ -199,8 +206,24 @@ int main(int argc, char **argv, char **inherited_envp)
     /* Fall back to "/" if PWD wasn't inherited. */
     if (!get_env("PWD"))
         set_env("PWD", "/");
+    
+    const char *home = get_env("HOME");
+    char* cnfpath = malloc(sizeof(char)*512);
 
-    printf("Mountshell v0.0.1\nBuilt for BlackmountOS\n");
+    sprintf(cnfpath, "%s/.mscnf", home);
+
+    config_init(cnfpath);
+
+    char *path = get_var("PATH", "/bin/");
+
+    if (path[strlen(path)-1] != '/')
+    {
+        path[strlen(path)]='/';
+    }
+
+    set_env("PATH", path);
+
+    printf("Mountshell v%s\nBuilt for BlackmountOS\n", VERSION);
 
     while (true) {
         print_prefix();
@@ -235,7 +258,7 @@ int main(int argc, char **argv, char **inherited_envp)
             continue;
         }
 
-        binary_check_and_execute("/bin/", input);
+        binary_check_and_execute(path, input);
     }
 
     return 0;

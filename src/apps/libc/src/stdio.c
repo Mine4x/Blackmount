@@ -282,3 +282,42 @@ int atoi(const char *s)
 
     return sign * result;
 }
+
+int sprintf(char *str, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    char *ptr = str;
+    const char *f = format;
+
+    while (*f) {
+        if (*f == '%') {
+            f++;
+            if (*f == 'd') {
+                int val = va_arg(args, int);
+                char buf[32];
+                sprintf(buf, "%d", val);
+                for (char *b = buf; *b; b++) *ptr++ = *b;
+            } else if (*f == 'f') {
+                double val = va_arg(args, double);
+                char buf[64];
+                sprintf(buf, "%f", val);
+                for (char *b = buf; *b; b++) *ptr++ = *b;
+            } else if (*f == 's') {
+                char *val = va_arg(args, char *);
+                while (*val) *ptr++ = *val++;
+            } else if (*f == 'c') {
+                char val = (char)va_arg(args, int);
+                *ptr++ = val;
+            } else {
+                *ptr++ = *f;
+            }
+        } else {
+            *ptr++ = *f;
+        }
+        f++;
+    }
+
+    *ptr = '\0';
+    va_end(args);
+    return ptr - str;
+}

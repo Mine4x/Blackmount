@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #include <pathutil.h>
 
@@ -48,6 +49,8 @@ int main(int argc, char **argv, char **envp)
         if (cat_file(resolved) < 0)
             ret = 1;
     }
+
+    printf("\n");
 
     return ret;
 }
