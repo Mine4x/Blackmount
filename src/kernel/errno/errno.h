@@ -35,9 +35,6 @@
 #define EDOM            33
 #define ERANGE          34
 
-static inline int64_t serror(int err)
-{
-    return -(int64_t)err;
-}
+uint64_t serror(int err);
 
 #endif

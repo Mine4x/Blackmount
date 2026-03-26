@@ -2,6 +2,7 @@
 #define DEVICE_H
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef int (*device_dispatch)(
     int pid,
