@@ -163,3 +163,25 @@ void *calloc(size_t nmemb, size_t size)
 
     return ptr;
 }
+
+void *zalloc(size_t size)
+{
+    if (size == 0)
+        return NULL;
+
+    void *ptr = malloc(size);
+    if (!ptr)
+        return NULL;
+
+    size_t *p = (size_t *)ptr;
+    size_t n = size / sizeof(size_t);
+
+    for (size_t i = 0; i < n; i++)
+        p[i] = 0;
+
+    uint8_t *tail = (uint8_t *)(p + n);
+    for (size_t i = 0; i < size % sizeof(size_t); i++)
+        tail[i] = 0;
+
+    return ptr;
+}
