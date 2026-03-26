@@ -22,6 +22,7 @@
 #include <block/block_mbr.h>
 #include <block/block_ramdisk.h>
 #include <mkfs/ext2_format.h>
+#include <errno/errno.h>
 
 block_device_t* rootdrive;
 ext2_fs_t*      rootfs;
@@ -38,7 +39,7 @@ VFS_File_t* open_files;
 int get_value_by_key(const char* input, int key, char* out, size_t out_size)
 {
     if (!input || !out || out_size == 0)
-        return -1;
+        return (int)serror(EINVAL);
 
     int current_key = 0;
     size_t out_index = 0;
@@ -61,7 +62,7 @@ int get_value_by_key(const char* input, int key, char* out, size_t out_size)
     }
 
     if (current_key != key)
-        return -1;
+        return (int)serror(ENOENT);
 
     out[out_index] = '\0';
     return 0;
@@ -128,11 +129,11 @@ int VFS_Mount(const char* source, const char* target)
 {
     block_device_t* dev = block_get(source);
     if (!dev)
-        return -1;
+        return (int)serror(ENODEV);
 
     ext2_fs_t* fs = ext2_mount(dev);
     if (!fs)
-        return -1;
+        return (int)serror(EIO);
 
     for (int i = 0; i < MAX_MOUNTS; i++) {
         if (!mount_table[i].active) {
@@ -148,7 +149,7 @@ int VFS_Mount(const char* source, const char* target)
 
     ext2_unmount(fs);
     log_err("VFS", "VFS_Mount: mount table full");
-    return -1;
+    return (int)serror(ENFILE);
 }
 
 int VFS_Unmount_Path(const char* target)
@@ -162,7 +163,7 @@ int VFS_Unmount_Path(const char* target)
         }
     }
     log_err("VFS", "VFS_Unmount_Path: %s not found", target);
-    return -1;
+    return (int)serror(ENOENT);
 }
 
 int VFS_Create(const char* path, bool isDir)
@@ -172,26 +173,26 @@ int VFS_Create(const char* path, bool isDir)
 
     if (!vfs_access_ok(fs, rel, ACCESS_WRITE, false)) {
         log_err("VFS", "VFS_Create: permission denied for %s", path);
-        return -1;
+        return (int)serror(EPERM);
     }
 
     if (isDir) {
         int result = ext2_mkdir(fs, rel);
         if (result == EXT2_SUCCESS)
             return 0;
-        return -1;
+        return (int)serror(ENOTDIR);
     }
 
     int result = ext2_create(fs, rel, 0644);
     if (result == EXT2_SUCCESS)
         return 0;
-    return -1;
+    return (int)serror(EIO);
 }
 
 static int setflags(file_flags_t flags, int fd)
 {
     if (!open_files[fd].exists)
-        return -1;
+        return (int)serror(EBADF);
 
     open_files[fd].flags = flags;
     return 0;
@@ -208,7 +209,7 @@ int VFS_Open(const char* path, bool privileged)
 
     if (!vfs_access_ok(fs, rel, ACCESS_READ, privileged)) {
         log_err("VFS", "VFS_Open: permission denied for %s", path);
-        return -1;
+        return (int)serror(EPERM);
     }
 
     uid_t caller_uid = privileged ? UID_ROOT : vfs_caller_uid();
@@ -219,7 +220,7 @@ int VFS_Open(const char* path, bool privileged)
     {
         ext2_dir_iter_t* iter = ext2_opendir(fs, rel);
         if (!iter)
-            return -1;
+            return (int)serror(ENOTDIR);
 
         for (int i = 0; i < MAX_OPEN_FILES; i++) {
             if (!open_files[i].exists) {
@@ -232,6 +233,7 @@ int VFS_Open(const char* path, bool privileged)
                 open_files[i].is_dev   = false;
                 open_files[i].owner    = caller_uid;
                 open_files[i].pid      = privileged ? -1 : proc_get_current_pid();
+                open_files[i].write_all= false;
                 if (privileged)
                     open_files[i].flags = KERNEL;
                 return i;
@@ -239,12 +241,12 @@ int VFS_Open(const char* path, bool privileged)
         }
 
         ext2_closedir(iter);
-        return -1;
+        return (int)serror(EMFILE);
     }
 
     ext2_file_t* ext2_file = ext2_open(fs, rel);
     if (!ext2_file)
-        return -1;
+        return (int)serror(ENOENT);
 
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (!open_files[i].exists) {
@@ -256,6 +258,7 @@ int VFS_Open(const char* path, bool privileged)
             open_files[i].exists   = true;
             open_files[i].owner    = caller_uid;
             open_files[i].pid      = proc_get_current_pid();
+            open_files[i].write_all= false;
 
             if (privileged) {
                 open_files[i].pid   = -1;
@@ -274,7 +277,7 @@ int VFS_Open(const char* path, bool privileged)
     }
 
     ext2_close(ext2_file);
-    return -1;
+    return (int)serror(EMFILE);
 }
 
 int VFS_ioctl(int fd, uint64_t req, void* arg)
@@ -282,7 +285,7 @@ int VFS_ioctl(int fd, uint64_t req, void* arg)
     int pid = proc_get_current_pid();
 
     if (!open_files[fd].exists || !open_files[fd].is_dev || open_files[fd].pid != pid)
-        return -1;
+        return (int)serror(EBADF);
 
     return open_files[fd].dev->dispatch(pid, req, arg);
 }
@@ -290,53 +293,60 @@ int VFS_ioctl(int fd, uint64_t req, void* arg)
 int VFS_Write(int fd, size_t count, void* buf, bool privileged)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
-        return -1;
-
+        return (int)serror(EBADF);
+    
     if (!open_files[fd].exists)
-        return -1;
+        return (int)serror(EBADF);
 
-    if (!privileged
-        && (open_files[fd].flags & KERNEL)
-        && !(open_files[fd].flags & USER_WRITE))
-        return -1;
-
-    if (!privileged && open_files[fd].pid != proc_get_current_pid())
-        return -1;
+    if (!privileged && open_files[fd].pid != proc_get_current_pid() && !open_files[fd].write_all)
+        return (int)serror(EACCES);
 
     const char* rel;
     resolve_fs(open_files[fd].path, &rel);
 
     if (!open_files[fd].is_dev
         && !vfs_access_ok(open_files[fd].fs, rel, ACCESS_WRITE, privileged))
-        return -1;
+        return (int)serror(EACCES);
 
     if (!open_files[fd].file)
-        return -1;
+        return (int)serror(EBADF);
+
+    
+    if (open_files[fd].is_dev && open_files[fd].dev->write != NULL)
+        return open_files[fd].dev->write(count, buf);
 
     int result = ext2_write(open_files[fd].file, buf, (uint32_t)count);
     if (result < 0)
-        return -1;
+        return (int)serror(EIO);
 
     return result;
+}
+
+static void setwriteall(bool new, int fd)
+{
+    open_files[fd].write_all = true;
 }
 
 int VFS_Read(int fd, size_t count, void* buf)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
-        return -1;
+        return (int)serror(EBADF);
 
     if (!open_files[fd].exists)
-        return -1;
+        return (int)serror(EBADF);
 
     if (open_files[fd].pid != -1 && open_files[fd].pid != proc_get_current_pid())
-        return -1;
+        return (int)serror(EACCES);
 
     if (!open_files[fd].file)
-        return -1;
+        return (int)serror(EBADF);
+    
+    if (open_files[fd].is_dev && open_files[fd].dev->read != NULL)
+        return open_files[fd].dev->read(count, buf);
 
     int result = ext2_read(open_files[fd].file, buf, (uint32_t)count);
     if (result < 0)
-        return -1;
+        return (int)serror(EIO);
 
     return result;
 }
@@ -344,16 +354,16 @@ int VFS_Read(int fd, size_t count, void* buf)
 int VFS_Close(int fd, bool privileged)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
-        return -1;
+        return (int)serror(EBADF);
 
     if (!open_files[fd].exists)
-        return -1;
+        return (int)serror(EBADF);
 
     if (!privileged && (open_files[fd].flags & KERNEL))
-        return -1;
+        return (int)serror(EACCES);
 
     if (!privileged && open_files[fd].pid != proc_get_current_pid())
-        return -1;
+        return (int)serror(EACCES);
 
     if (open_files[fd].is_dir && open_files[fd].dir_iter) {
         ext2_closedir(open_files[fd].dir_iter);
@@ -371,13 +381,13 @@ int VFS_Close(int fd, bool privileged)
 int VFS_GetDents64(int fd, struct linux_dirent64* buf, size_t count)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
-        return -1;
+        return (int)serror(EBADF);
 
     if (!open_files[fd].exists || !open_files[fd].is_dir || !open_files[fd].dir_iter)
-        return -1;
+        return (int)serror(ENOTDIR);
 
     if (open_files[fd].pid != proc_get_current_pid())
-        return -1;
+        return (int)serror(EACCES);
 
     size_t written = 0;
     uint8_t* ptr = (uint8_t*)buf;
@@ -413,34 +423,39 @@ int VFS_GetDents64(int fd, struct linux_dirent64* buf, size_t count)
 int VFS_Set_Pos(int fd, uint32_t pos, bool privileged)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
-        return -1;
+        return (int)serror(EBADF);
 
     if (!open_files[fd].exists || !open_files[fd].file)
-        return -1;
+        return (int)serror(EBADF);
 
     if (!privileged && (open_files[fd].flags & KERNEL) && !(open_files[fd].flags & USER_WRITE))
-        return -1;
+        return (int)serror(EACCES);
 
     if (!privileged && open_files[fd].pid != proc_get_current_pid())
-        return -1;
+        return (int)serror(EACCES);
 
     int result = ext2_seek(open_files[fd].file, pos, EXT2_SEEK_SET);
     if (result == EXT2_SUCCESS)
         return 0;
 
-    return -1;
+    return (int)serror(ESPIPE);
 }
 
 static void create_special_files(void)
 {
     VFS_Create("/dev", true);
-    
+
     block_device_t *dev_ramdisk = ramdisk_create_blockdev("ram0", 4 * 1024 * 1024);
     block_register(dev_ramdisk);
     ext2_format(dev_ramdisk);
-    ext2_fs_t *dev_fs = ext2_mount(dev_ramdisk);
     VFS_Mount("ram0", "/dev");
     log_ok("VFS", "Created and mounted device ramdisk(/dev, ram0)");
+
+    block_device_t *tmp_ramdisk = ramdisk_create_blockdev("ram1", 4 * 1024 * 1024);
+    block_register(tmp_ramdisk);
+    ext2_format(tmp_ramdisk);
+    VFS_Mount("ram0", "/dev");
+    log_ok("VFS", "Created and mounted device ramdisk(/tmp, ram1)");
 
     stdin_device_init("/dev/stdin");
     stdout_device_init("/dev/stdout");
@@ -457,6 +472,10 @@ static void create_special_files(void)
         log_err("VFS", "Failed to open special file 3");
     if (VFS_Open("/dev/stddbg", true) < 0)
         log_err("VFS", "Failed to open special file 4");
+    
+    setwriteall(true, 1);
+    setwriteall(true, 2);
+    setwriteall(true, 3);
 }
 
 void VFS_Init(void)
@@ -477,7 +496,7 @@ void VFS_Init(void)
     const char* rd = config_get("bootdisk", "iso");
     if (strcmp(rd, "iso") == 0) {
         log_info("VFS", "Using hdd.img as root");
-        
+
         block_device_t* imgdev = image_create_blockdev("hdaimg", "hdd.img");
         if (!imgdev)
             panic("VFS", "Failed to create block device from hdd.img");
@@ -545,26 +564,20 @@ int VFS_Write_old(fd_t file, uint8_t* data, size_t size)
         return 0;
     case VFS_FD_STDOUT:
         for (size_t i = 0; i < size; i++)
-        {
-            //log_info("CON", "byte 0x%02x", (unsigned)data[i]);
             console_putc(data[i]);
-        }
         return size;
     case VFS_FD_STDERR:
-        for (size_t i = 0; i < size; i++)
-        {
+        for (size_t i = 0; i < size; i++) {
             log_info("CON", "byte 0x%02x", (unsigned)data[i]);
             console_putc(data[i]);
         }
         return size;
-
     case VFS_FD_DEBUG:
         for (size_t i = 0; i < size; i++)
             e9_putc(data[i]);
         return size;
-
     default:
-        return -1;
+        return (int)serror(EBADF);
     }
 }
 
@@ -576,13 +589,13 @@ uint64_t sys_execve(uint64_t path, uint64_t argv, uint64_t envp)
 
     uid_t caller_uid = proc_get_owner(proc_get_current_pid());
     if (!user_exists(caller_uid))
-        return (uint64_t)-1;
+        return serror(EPERM);
 
     if (!user_is_root(caller_uid)) {
         const char* rel;
         ext2_fs_t*  fs = resolve_fs(prog, &rel);
         if (ext2_access(fs, rel, caller_uid, ACCESS_EXEC) != EXT2_SUCCESS)
-            return (uint64_t)-1;
+            return serror(EACCES);
     }
 
     int argc = 0;

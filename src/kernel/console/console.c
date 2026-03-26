@@ -2,6 +2,7 @@
 #include <proc/proc.h>
 #include <debug.h>
 #include <device/tty/device_tty.h>
+#include <util/rgb.h>
 
 static InputManager *input = NULL;
 
@@ -80,6 +81,35 @@ void console_read_special_char(char* buf, size_t count)
 void console_set_current_c(char c)
 {
     c_current_key = c;
+
+    if (console_is_raw_mode())
+    {
+        for (int i = 0; i < waitingProcesses.size; i++) {
+            WaitingProc **wp_ptr = vector_get(&waitingProcesses, i);
+            WaitingProc  *wp     = *wp_ptr;
+
+            if (!wp)
+                continue;
+
+            if (wp->buffer && wp->active && wp->buf_size > 0) {
+                char tmp[2];
+                tmp[0] = c_current_key;
+                tmp[1] = '\0';
+
+                if (!proc_write_to_user(wp->pid, wp->buffer,
+                                        tmp, 1)) {
+                    log_err(CONSOLE_MODULE,
+                            "console_raw: proc_write_to_user failed for pid %d",
+                            wp->pid);
+                }
+            }
+
+            proc_unblock(wp->pid);
+            kfree(wp);
+        }
+
+        vector_clear(&waitingProcesses);
+    }
 }
 
 char console_get_current_c()
@@ -150,23 +180,23 @@ static void handle_escape_sequence(void)
                 val = val * 10 + (ch - '0');
             } else if (ch == ';' || ch == 'm') {
                 switch (val) {
-                    case  0: fg = 0xFFFFFF; bg = 0x000000; break;
-                    case 30: fg = 0x000000; break;
-                    case 31: fg = 0xFF0000; break;
-                    case 32: fg = 0x00FF00; break;
-                    case 33: fg = 0xFFFF00; break;
-                    case 34: fg = 0x0000FF; break;
-                    case 35: fg = 0xFF00FF; break;
-                    case 36: fg = 0x00FFFF; break;
-                    case 37: fg = 0xFFFFFF; break;
-                    case 40: bg = 0x000000; break;
-                    case 41: bg = 0xFF0000; break;
-                    case 42: bg = 0x00FF00; break;
-                    case 43: bg = 0xFFFF00; break;
-                    case 44: bg = 0x0000FF; break;
-                    case 45: bg = 0xFF00FF; break;
-                    case 46: bg = 0x00FFFF; break;
-                    case 47: bg = 0xFFFFFF; break;
+                    case  0: fg = rgb(255,255,255); bg = rgb(0,0,0); break;
+                    case 30: fg = rgb(85,85,85); break;
+                    case 31: fg = rgb(255,85,85); break;
+                    case 32: fg = rgb(85,225,85); break;
+                    case 33: fg = rgb(255,255,85); break;
+                    case 34: fg = rgb(85,85,255); break;
+                    case 35: fg = rgb(255,85,255); break;
+                    case 36: fg = rgb(85,255,255); break;
+                    case 37: fg = rgb(255,255,255); break;
+                    case 40: bg = rgb(0,0,0); break;
+                    case 41: bg = rgb(170,0,0); break;
+                    case 42: bg = rgb(0,170,0); break;
+                    case 43: bg = rgb(170,85,0); break;
+                    case 44: bg = rgb(0,0,170); break;
+                    case 45: bg = rgb(170,0,170); break;
+                    case 46: bg = rgb(0,170,170); break;
+                    case 47: bg = rgb(170,170,170); break;
                     default: break;
                 }
                 val = 0;
@@ -382,4 +412,14 @@ int console_get_pgrp(void)
 void console_set_pgrp(int pgrp)
 {
     c_pgrp = pgrp;
+}
+
+bool console_is_raw_mode(void)
+{
+    return !(c_termios.c_lflag & ICANON) &&
+           !(c_termios.c_lflag & ECHO)   &&
+           !(c_termios.c_lflag & ISIG)   &&
+           !(c_termios.c_iflag & IXON)   &&
+           !(c_termios.c_iflag & ICRNL)  &&
+           !(c_termios.c_oflag & OPOST);
 }

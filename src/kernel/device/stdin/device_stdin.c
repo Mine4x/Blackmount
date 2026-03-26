@@ -3,6 +3,8 @@
 #include <heap.h>
 #include <console/console.h>
 #include <proc/proc.h>
+#include <hal/vfs.h>
+#include <errno/errno.h>
 
 static int rmc(int pid, void *arg)
 {
@@ -53,6 +55,26 @@ static int dispatcher(int pid, uint64_t req, void *arg)
     }
 }
 
+static int read(size_t count, void* buf)
+{
+    int pid = proc_get_current_pid();
+    if (pid < 0)
+        return serror(ESRCH);
+
+    console_register_proc(pid, (void*)buf, count);
+
+    x86_64_EnableInterrupts();
+
+    proc_yield();
+
+    return count;
+}
+
+static int write(size_t count, void* buf)
+{
+    return -1;
+}
+
 device_t* stdin_device_init(const char* path)
 {
     if (VFS_Create(path, false) < 0)
@@ -64,6 +86,8 @@ device_t* stdin_device_init(const char* path)
 
     dev->path = path;
     dev->dispatch = &dispatcher;
+    dev->read = &read;
+    dev->write = &write;
 
     device_register(dev);
 

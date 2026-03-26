@@ -96,6 +96,16 @@ static int dispatcher(int pid, uint64_t req, void *arg)
     }
 }
 
+static int read(size_t count, void* buf)
+{
+    return -1;
+}
+
+static int write(size_t count, void* buf)
+{
+    return -1;
+}
+
 device_t* tty_device_init(const char* path)
 {
     if (VFS_Create(path, false) < 0)
@@ -106,6 +116,8 @@ device_t* tty_device_init(const char* path)
 
     dev->path     = path;
     dev->dispatch = &dispatcher;
+    dev->read = &read;
+    dev->write = &write;
 
     device_register(dev);
     return dev;
