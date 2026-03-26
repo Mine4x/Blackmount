@@ -9,6 +9,7 @@
 #include <memory.h>
 #include <heap.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <drivers/usb/xhci/usb_hid.h>
 
 #define CONSOLE_BUFFER_SIZE 128
@@ -157,5 +158,7 @@ void console_set_winsize(const struct winsize *w);
 void console_tcflush(int queue);
 int  console_get_pgrp(void);
 void console_set_pgrp(int pgrp);
+
+bool console_is_raw_mode(void);
 
 #endif

@@ -53,6 +53,7 @@ typedef struct {
     bool             is_dir;
     device_t*        dev;
     bool             is_dev;
+    bool             write_all;
 } VFS_File_t;
 
 #define VFS_FD_STDIN    0
@@ -70,6 +71,7 @@ int  VFS_Close(int fd, bool privileged);
 int  VFS_Set_Pos(int fd, uint32_t pos, bool privileged);
 int  VFS_GetDents64(int fd, struct linux_dirent64* buf, size_t count);
 int  VFS_ioctl(int fd, uint64_t req, void* arg);
+// DEPERECATED
 int  VFS_Write_old(fd_t file, uint8_t* data, size_t size);
 int  VFS_Mount(const char* source, const char* target);
 int  VFS_Unmount_Path(const char* target);

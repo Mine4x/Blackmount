@@ -628,11 +628,7 @@ uint64_t sys_writev(uint64_t fd, uint64_t iov_ptr, uint64_t iovcnt)
             return total > 0 ? total : serror(EFAULT);
         }
 
-        int r;
-        if (fd == VFS_FD_STDOUT || fd == VFS_FD_STDERR)
-            r = VFS_Write_old((fd_t)fd, kbuf, kiov[i].iov_len);
-        else
-            r = VFS_Write((int)fd, kiov[i].iov_len, kbuf, false);
+        int r = VFS_Write((int)fd, kiov[i].iov_len, kbuf, false);
 
         kfree(kbuf);
 
@@ -698,16 +694,5 @@ uint64_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
 {
     (void)unused1; (void)unused2; (void)unused3;
 
-    if (fd == VFS_FD_STDIN) return 0;
-
-    if (fd == VFS_FD_STDOUT || fd == VFS_FD_STDERR) {
-        uint8_t *kbuf = (uint8_t *)kmalloc(count);
-        if (!kbuf) return serror(ENOMEM);
-        memcpy(kbuf, (const void *)buf, count);
-        int r = VFS_Write_old((fd_t)fd, kbuf, count);
-        kfree(kbuf);
-        return (uint64_t)r;
-    }
-
-    return (uint64_t)VFS_Write_old((fd_t)fd, (uint8_t *)buf, count);
+    return (uint64_t)VFS_Write((fd_t)fd, count, (void*)buf, false);
 }

@@ -22,22 +22,7 @@ uint64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
     (void)unused2;
     (void)unused3;
 
-    if (fd != VFS_FD_STDIN) {
-        int r = VFS_Read((int)fd, (size_t)count, (void*)buf);
-        return r < 0 ? serror(-r) : (uint64_t)r;
-    }
-
-    int pid = proc_get_current_pid();
-    if (pid < 0)
-        return serror(ESRCH);
-
-    console_register_proc(pid, (void*)buf, count);
-
-    x86_64_EnableInterrupts();
-
-    proc_yield();
-
-    return count;
+    return VFS_Read((int)fd, (size_t)count, (void*)buf);
 }
 
 uint64_t sys_open(uint64_t path, uint64_t flags)

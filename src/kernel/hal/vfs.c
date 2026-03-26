@@ -233,6 +233,7 @@ int VFS_Open(const char* path, bool privileged)
                 open_files[i].is_dev   = false;
                 open_files[i].owner    = caller_uid;
                 open_files[i].pid      = privileged ? -1 : proc_get_current_pid();
+                open_files[i].write_all= false;
                 if (privileged)
                     open_files[i].flags = KERNEL;
                 return i;
@@ -257,6 +258,7 @@ int VFS_Open(const char* path, bool privileged)
             open_files[i].exists   = true;
             open_files[i].owner    = caller_uid;
             open_files[i].pid      = proc_get_current_pid();
+            open_files[i].write_all= false;
 
             if (privileged) {
                 open_files[i].pid   = -1;
@@ -292,16 +294,11 @@ int VFS_Write(int fd, size_t count, void* buf, bool privileged)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
         return (int)serror(EBADF);
-
+    
     if (!open_files[fd].exists)
         return (int)serror(EBADF);
 
-    if (!privileged
-        && (open_files[fd].flags & KERNEL)
-        && !(open_files[fd].flags & USER_WRITE))
-        return (int)serror(EACCES);
-
-    if (!privileged && open_files[fd].pid != proc_get_current_pid())
+    if (!privileged && open_files[fd].pid != proc_get_current_pid() && !open_files[fd].write_all)
         return (int)serror(EACCES);
 
     const char* rel;
@@ -314,11 +311,20 @@ int VFS_Write(int fd, size_t count, void* buf, bool privileged)
     if (!open_files[fd].file)
         return (int)serror(EBADF);
 
+    
+    if (open_files[fd].is_dev && open_files[fd].dev->write != NULL)
+        return open_files[fd].dev->write(count, buf);
+
     int result = ext2_write(open_files[fd].file, buf, (uint32_t)count);
     if (result < 0)
         return (int)serror(EIO);
 
     return result;
+}
+
+static void setwriteall(bool new, int fd)
+{
+    open_files[fd].write_all = true;
 }
 
 int VFS_Read(int fd, size_t count, void* buf)
@@ -334,6 +340,9 @@ int VFS_Read(int fd, size_t count, void* buf)
 
     if (!open_files[fd].file)
         return (int)serror(EBADF);
+    
+    if (open_files[fd].is_dev && open_files[fd].dev->read != NULL)
+        return open_files[fd].dev->read(count, buf);
 
     int result = ext2_read(open_files[fd].file, buf, (uint32_t)count);
     if (result < 0)
@@ -439,9 +448,14 @@ static void create_special_files(void)
     block_device_t *dev_ramdisk = ramdisk_create_blockdev("ram0", 4 * 1024 * 1024);
     block_register(dev_ramdisk);
     ext2_format(dev_ramdisk);
-    ext2_fs_t *dev_fs = ext2_mount(dev_ramdisk);
     VFS_Mount("ram0", "/dev");
     log_ok("VFS", "Created and mounted device ramdisk(/dev, ram0)");
+
+    block_device_t *tmp_ramdisk = ramdisk_create_blockdev("ram1", 4 * 1024 * 1024);
+    block_register(tmp_ramdisk);
+    ext2_format(tmp_ramdisk);
+    VFS_Mount("ram0", "/dev");
+    log_ok("VFS", "Created and mounted device ramdisk(/tmp, ram1)");
 
     stdin_device_init("/dev/stdin");
     stdout_device_init("/dev/stdout");
@@ -458,6 +472,10 @@ static void create_special_files(void)
         log_err("VFS", "Failed to open special file 3");
     if (VFS_Open("/dev/stddbg", true) < 0)
         log_err("VFS", "Failed to open special file 4");
+    
+    setwriteall(true, 1);
+    setwriteall(true, 2);
+    setwriteall(true, 3);
 }
 
 void VFS_Init(void)
