@@ -5,6 +5,11 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#ifndef _SSIZE_T_DEFINED
+#define _SSIZE_T_DEFINED
+typedef long ssize_t;
+#endif
+
 /* File I/O */
 #define SYSCALL_READ        0
 #define SYSCALL_WRITE       1
@@ -72,6 +77,20 @@
 #define SYSCALL_SETRESGID   119
 #define SYSCALL_GETRESGID   120
 
+/* UNIX domain sockets (Linux-ABI numbers) */
+#define SYSCALL_SOCKET      41
+#define SYSCALL_CONNECT     42
+#define SYSCALL_ACCEPT      43
+#define SYSCALL_SENDTO      44
+#define SYSCALL_RECVFROM    45
+#define SYSCALL_SHUTDOWN    48
+#define SYSCALL_BIND        49
+#define SYSCALL_LISTEN      50
+#define SYSCALL_GETSOCKNAME 51
+#define SYSCALL_GETPEERNAME 52
+#define SYSCALL_SETSOCKOPT  54
+#define SYSCALL_GETSOCKOPT  55
+
 /* Kernel-private */
 #define SYSCALL_BINRUN      301
 #define SYSCALL_WAIT        302
@@ -115,6 +134,53 @@ struct linux_dirent64 {
     unsigned char  d_type;
     char           d_name[];
 } __attribute__((packed));
+
+/* =========================================================================
+ * UNIX domain socket types and constants
+ * ========================================================================= */
+
+/* Address families */
+#define AF_UNIX     1
+#define AF_LOCAL    AF_UNIX   /* alias */
+
+/* Socket types */
+#define SOCK_STREAM 1
+#define SOCK_DGRAM  2
+
+/* shutdown() how values */
+#define SHUT_RD     0   /* stop receiving  */
+#define SHUT_WR     1   /* stop sending    */
+#define SHUT_RDWR   2   /* stop both       */
+
+/* Maximum UNIX socket path length (matches Linux) */
+#define UNIX_PATH_MAX 108
+
+/* SOL_SOCKET level + common options (for setsockopt/getsockopt stubs) */
+#define SOL_SOCKET   1
+#define SO_REUSEADDR 2
+#define SO_KEEPALIVE 9
+#define SO_ERROR     4
+#define SO_TYPE      3
+
+/* MSG flags for sendto/recvfrom */
+#define MSG_DONTWAIT 0x40
+#define MSG_NOSIGNAL 0x4000
+#define MSG_WAITALL  0x100
+
+/* socklen_t */
+typedef uint32_t socklen_t;
+
+/* struct sockaddr_un — UNIX domain socket address */
+struct sockaddr_un {
+    uint16_t sun_family;              /* AF_UNIX */
+    char     sun_path[UNIX_PATH_MAX]; /* filesystem path  */
+};
+
+/* Generic socket address (for casts, matches Linux struct sockaddr) */
+struct sockaddr {
+    uint16_t sa_family;
+    char     sa_data[14];
+};
 
 /* lseek whence values */
 #define SEEK_SET  0
@@ -269,5 +335,28 @@ int          setegid(unsigned int gid);
 int          setregid(unsigned int rgid, unsigned int egid);
 int          setresgid(unsigned int rgid, unsigned int egid, unsigned int sgid);
 int          getresgid(unsigned int *rgid, unsigned int *egid, unsigned int *sgid);
+
+/* =========================================================================
+ * UNIX domain sockets
+ * ========================================================================= */
+
+int socket(int domain, int type, int protocol);
+int bind(int sockfd, const struct sockaddr_un *addr, socklen_t addrlen);
+int listen(int sockfd, int backlog);
+int accept(int sockfd, struct sockaddr_un *addr, socklen_t *addrlen);
+int connect(int sockfd, const struct sockaddr_un *addr, socklen_t addrlen);
+ssize_t send(int sockfd, const void *buf, size_t len, int flags);
+ssize_t recv(int sockfd, void *buf, size_t len, int flags);
+ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
+               const struct sockaddr_un *dest_addr, socklen_t addrlen);
+ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
+                 struct sockaddr_un *src_addr, socklen_t *addrlen);
+int shutdown(int sockfd, int how);
+int getsockname(int sockfd, struct sockaddr_un *addr, socklen_t *addrlen);
+int getpeername(int sockfd, struct sockaddr_un *addr, socklen_t *addrlen);
+int setsockopt(int sockfd, int level, int optname,
+               const void *optval, socklen_t optlen);
+int getsockopt(int sockfd, int level, int optname,
+               void *optval, socklen_t *optlen);
 
 #endif /* SYSCALLS_H */
