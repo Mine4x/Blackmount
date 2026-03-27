@@ -34,6 +34,13 @@
 #define EPIPE           32
 #define EDOM            33
 #define ERANGE          34
+#define EAFNOSUPPORT     97
+#define ESOCKTNOSUPPORT  94
+#define ENOTSOCK         88
+#define EADDRINUSE       98
+#define EOPNOTSUPP       95
+#define ECONNREFUSED     111
+#define EDESTADDRREQ     89
 
 uint64_t serror(int err);
 
