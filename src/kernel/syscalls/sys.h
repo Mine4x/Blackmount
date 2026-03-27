@@ -62,3 +62,18 @@ uint64_t sys_mprotect(uint64_t addr, uint64_t length, uint64_t prot);
 uint64_t sys_authu(uint64_t username, uint64_t password);
 uint64_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
                    uint64_t unused1, uint64_t unused2, uint64_t unused3);
+
+uint64_t sys_create(uint64_t path, uint64_t is_dir);
+uint64_t sys_getdents64(uint64_t fd, uint64_t buf, uint64_t size);
+uint64_t sys_ioctl(uint64_t fd, uint64_t req, uint64_t arg);
+uint64_t sys_close(uint64_t fd);
+uint64_t sys_open(uint64_t path, uint64_t flags);
+uint64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count, uint64_t unused1, uint64_t unused2, uint64_t unused3);
+
+uint64_t sys_socket(uint64_t domain, uint64_t type, uint64_t protocol);
+uint64_t sys_bind(uint64_t fd, uint64_t addr, uint64_t addrlen);
+uint64_t sys_listen(uint64_t fd, uint64_t backlog);
+uint64_t sys_accept(uint64_t fd, uint64_t addr, uint64_t addrlen);
+uint64_t connect(uint64_t fd, uint64_t addr, uint64_t addrlen);
+uint64_t sendto(uint64_t fd, uint64_t buf, uint64_t count, uint64_t dest);
+uint64_t recvfrom(uint64_t fd, uint64_t buf, uint64_t count, uint64_t src_out);
