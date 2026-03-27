@@ -1,6 +1,12 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+typedef enum request_type
+{
+    INSTALL = 0,
+    REMOVE  = 1,
+} request_type_t;
+
 typedef enum package_type
 {
     EXECUTABLE = 0,
@@ -15,6 +21,12 @@ typedef struct package
     char*          str_ver;
     package_type_t type;
 } package_t;
+
+typedef struct request
+{
+    request_type_t  t;
+    char pakpath[124];
+} request_t;
 
 
 #endif

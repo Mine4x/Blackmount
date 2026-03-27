@@ -64,6 +64,9 @@ int main(void)
         return -1;
     }
 
+    binrun("/bin/packs-daemon"); //TEMP
+    log_ok("Started packs service");
+
     log_ok("Started System completely");
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\033[0m\n");
 
