@@ -3,7 +3,18 @@
 #include <stdio.h>
 
 #include "daemon.h"
+#include "manager.h"
+#include "parser.h"
 #include "types.h"
+
+static void __on_request(request_t* req)
+{
+    if (req->t == INSTALL)
+    {
+        package_t *pkg = parse_package(req->pakpath);
+        if (pkg == NULL) {return;}
+    }
+}
 
 void daemon_start()
 {

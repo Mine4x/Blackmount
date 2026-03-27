@@ -38,7 +38,7 @@ static int find_free_package()
     return -1;
 }
 
-int manager_install_package(package_t* pkg)
+int manager_add_package(package_t* pkg)
 {
     int pack_i = find_free_package();
     if (pack_i < 0) {return -1;}
