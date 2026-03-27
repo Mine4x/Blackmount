@@ -8,7 +8,7 @@
 #include "types.h"
 
 int manager_init();
-int manager_add_package(package_t* pkg);
+int manager_install_package(package_t* pkg);
 package_t* find_pkg(const char* name);
 
 #endif
