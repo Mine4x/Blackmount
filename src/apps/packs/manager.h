@@ -2,6 +2,7 @@
 #define MANAGER_H
 
 #define MAIN_DIR "/etc/packs"
+#define PACKAGES_FILE "/etc/packs/packages"
 #define MAX_PACKS 10000
 
 #include "types.h"
