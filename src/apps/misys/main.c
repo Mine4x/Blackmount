@@ -76,8 +76,7 @@ int main(void)
     scan_and_parse("/etc/misys/groups",   parse_and_register_group,   "group");
     scan_and_parse("/etc/misys/services", parse_and_register_service, "service");
 
-    binrun("/bin/packs-daemon"); //TEMP
-    log_ok("Started packs service");
+    manager_exec_all();
 
     log_ok("Started System completely");
     printf("\n\nWelcome to \x1b[30;47mBlackmount\x1b[36;40m OS\033[0m\n");

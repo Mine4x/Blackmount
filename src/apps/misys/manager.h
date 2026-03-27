@@ -8,6 +8,10 @@
 #include <string.h>
 #include "types.h"
 #include <stdio.h>
+#include <unistd.h>
+#include "log.h"
+
+int manager_exec_all();
 
 int manager_init(void);
 int manager_register_group(const char* name);

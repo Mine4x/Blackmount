@@ -8,14 +8,42 @@ int service_count;
 
 int manager_init(void)
 {
-    groups = malloc(sizeof(group*) * MAX_GROUPS);
+    groups = zalloc(sizeof(group*) * MAX_GROUPS);
     if (!groups) return -1;
 
-    services = malloc(sizeof(service*) * MAX_SERVICES);
+    services = zalloc(sizeof(service*) * MAX_SERVICES);
     if (!services) { free(groups); return -1; }
 
     service_count = 0;
     group_count = 0;
+    return 0;
+}
+
+int manager_exec_all()
+{
+    for (int i = 0; i < service_count; i++)
+    {
+        char* msg = zalloc(sizeof(char) * 256);
+
+        if (!services[i] || !services[i]->name || !services[i]->exec) {
+            snprintf(msg, 256, "Unable to start unknown service(index %d)", i);
+            log_fail(msg);
+            free(msg);
+            continue;
+        }
+
+        snprintf(msg, 256, "Unable to start service %s", services[i]->name);
+
+        if (binrun(services[i]->exec) < 0) {
+            log_fail(msg);
+            free(msg);
+            continue;
+        }
+
+        snprintf(msg, 256, "Started service '%s'", services[i]->name);
+        log_ok(msg);
+        free(msg);
+    }
     return 0;
 }
 
