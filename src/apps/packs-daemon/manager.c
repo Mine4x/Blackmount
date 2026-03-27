@@ -2,6 +2,7 @@
 
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "types.h"
@@ -38,7 +39,7 @@ static int find_free_package()
     return -1;
 }
 
-int manager_install_package(package_t* pkg)
+int manager_add_package(package_t* pkg)
 {
     int pack_i = find_free_package();
     if (pack_i < 0) {return -1;}
@@ -127,7 +128,7 @@ int manager_load_packages()
 
         read(fd, &p->type, sizeof(int));
 
-        manager_install_package(p);
+        manager_add_package(p);
     }
 
     close(fd);

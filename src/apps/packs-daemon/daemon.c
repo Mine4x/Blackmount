@@ -4,6 +4,23 @@
 
 #include "daemon.h"
 #include "types.h"
+#include "manager.h"
+#include "parser.h"
+
+static void __on_req(request_t* req)
+{
+    if (req->t == INSTALL)
+    {
+        package_t *pkg = parse_package(req->pakpath);
+        if (pkg == NULL) {errorf("Unable to parse package with path %s\n", req->pakpath); return;}
+
+        if (manager_add_package(pkg) < 0) {errorf("Unable to register package: %s", pkg->name);free(pkg);return;}
+
+        return;
+    }
+
+    errorf("Not valid package type from %s: %d\n", req->pakpath, req->t);
+}
 
 void daemon_start()
 {
@@ -38,11 +55,11 @@ void daemon_start()
 
         if (received == sizeof(req))
         {
-            printf("Received request type=%d, path=%s\n", req.t, req.pakpath);
+            __on_req(&req);
         }
         else
         {
-            printf("Incomplete request received\n");
+            errorf("Incomplete request received\n");
         }
 
         close(client_fd);

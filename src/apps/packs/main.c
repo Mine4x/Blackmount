@@ -20,7 +20,7 @@ int main()
 {
     int sock = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sock < 0) {
-        printf("socket");
+        errorf("socket");
         return 1;
     }
 
@@ -30,18 +30,18 @@ int main()
     addr.sun_path[sizeof(addr.sun_path)-1] = '\0';
 
     if (connect(sock, &addr, sizeof(addr)) < 0) {
-        printf("connect");
+        errorf("connect");
         return 1;
     }
 
     request_t req;
-    req.t = REMOVE;
+    req.t = INSTALL;
     strncpy(req.pakpath, "/tmp/testpackage", sizeof(req.pakpath));
     req.pakpath[sizeof(req.pakpath)-1] = '\0';
 
     ssize_t sent = send(sock, &req, sizeof(req), 0);
     if (sent != sizeof(req)) {
-        printf("send");
+        errorf("send");
         close(sock);
         return 1;
     }

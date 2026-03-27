@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "types.h"
@@ -30,27 +31,41 @@ package_t* parse_package(const char* pack_path)
 
     pkg->location = strdup(pack_path);
 
+    bool found_name = false;
+    bool found_type = false;
+    bool found_strv = false;
+    bool found_intv = false;
+
     char* line = strtok(buffer, "\n");
     while (line)
     {
         if (strncmp(line, "name=", 5) == 0)
         {
             pkg->name = strdup(line + 5);
+            found_name = true;
         }
         else if (strncmp(line, "type=", 5) == 0)
         {
             pkg->type = atoi(line + 5);
+            found_type = true;
         }
         else if (strncmp(line, "strv=", 5) == 0)
         {
             pkg->str_ver = strdup(line + 5);
+            found_strv = true;
         }
         else if (strncmp(line, "intv=", 5) == 0)
         {
             pkg->int_ver = atoi(line + 5);
+            found_intv = true;
         }
 
         line = strtok(NULL, "\n");
+    }
+
+    if (!found_intv || !found_name || !found_strv || !found_type)
+    {
+        return NULL;
     }
 
     return pkg;
