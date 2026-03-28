@@ -8,12 +8,13 @@ int main()
 {
     if (manager_init() < 0)
     {
-        printf("\x1b[31;41mpacks FATAL: UNABLE TO INITIATE MANAGER\x1b[0m\n");
+        errorf("packs FATAL: unable to initialise package manager\n");
+        return -1;
     }
 
+    
     daemon_start();
 
-    printf("\x1b[31;41mpacks FATAL: DAEMON RETURNED\x1b[0m\n");
-
+    errorf("packs FATAL: daemon returned unexpectedly\n");
     return -1;
 }
