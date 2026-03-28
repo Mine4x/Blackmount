@@ -1,6 +1,5 @@
 #include "scman.h"
-#include "sys_fs.h"
-#include "sys_proc.h"
+#include "sys.h"
 #include <arch/x86_64/syscalls.h>
 #include <proc/proc.h>
 #include <debug.h>
@@ -51,6 +50,14 @@ void register_syscalls(void)
 
     x86_64_Syscall_RegisterHandler(24,  (SyscallHandler)proc_yield);
     x86_64_Syscall_RegisterHandler(35,  (SyscallHandler)proc_brk);
+
+    x86_64_Syscall_RegisterHandler(41,  (SyscallHandler)sys_socket);
+    x86_64_Syscall_RegisterHandler(42,  (SyscallHandler)connect);
+    x86_64_Syscall_RegisterHandler(43,  (SyscallHandler)sys_accept);
+    x86_64_Syscall_RegisterHandler(44,  (SyscallHandler)sendto);
+    x86_64_Syscall_RegisterHandler(45,  (SyscallHandler)recvfrom);
+    x86_64_Syscall_RegisterHandler(49,  (SyscallHandler)sys_bind);
+    x86_64_Syscall_RegisterHandler(50,  (SyscallHandler)sys_listen);
 
     x86_64_Syscall_RegisterHandler(56,  (SyscallHandler)sys_clone);
     x86_64_Syscall_RegisterHandler(57,  (SyscallHandler)sys_fork);

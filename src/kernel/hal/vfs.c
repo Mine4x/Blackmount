@@ -23,6 +23,7 @@
 #include <block/block_ramdisk.h>
 #include <mkfs/ext2_format.h>
 #include <errno/errno.h>
+#include <net/unix_socket.h>
 
 block_device_t* rootdrive;
 ext2_fs_t*      rootfs;
@@ -224,16 +225,17 @@ int VFS_Open(const char* path, bool privileged)
 
         for (int i = 0; i < MAX_OPEN_FILES; i++) {
             if (!open_files[i].exists) {
-                open_files[i].path     = path;
-                open_files[i].file     = NULL;
-                open_files[i].dir_iter = iter;
-                open_files[i].fs       = fs;
-                open_files[i].is_dir   = true;
-                open_files[i].exists   = true;
-                open_files[i].is_dev   = false;
-                open_files[i].owner    = caller_uid;
-                open_files[i].pid      = privileged ? -1 : proc_get_current_pid();
-                open_files[i].write_all= false;
+                open_files[i].path      = path;
+                open_files[i].file      = NULL;
+                open_files[i].dir_iter  = iter;
+                open_files[i].fs        = fs;
+                open_files[i].is_dir    = true;
+                open_files[i].exists    = true;
+                open_files[i].is_dev    = false;
+                open_files[i].is_socket = false;
+                open_files[i].owner     = caller_uid;
+                open_files[i].pid       = privileged ? -1 : proc_get_current_pid();
+                open_files[i].write_all = false;
                 if (privileged)
                     open_files[i].flags = KERNEL;
                 return i;
@@ -250,15 +252,16 @@ int VFS_Open(const char* path, bool privileged)
 
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (!open_files[i].exists) {
-            open_files[i].path     = path;
-            open_files[i].file     = ext2_file;
-            open_files[i].dir_iter = NULL;
-            open_files[i].fs       = fs;
-            open_files[i].is_dir   = false;
-            open_files[i].exists   = true;
-            open_files[i].owner    = caller_uid;
-            open_files[i].pid      = proc_get_current_pid();
-            open_files[i].write_all= false;
+            open_files[i].path      = path;
+            open_files[i].file      = ext2_file;
+            open_files[i].dir_iter  = NULL;
+            open_files[i].fs        = fs;
+            open_files[i].is_dir    = false;
+            open_files[i].exists    = true;
+            open_files[i].owner     = caller_uid;
+            open_files[i].pid       = proc_get_current_pid();
+            open_files[i].write_all = false;
+            open_files[i].is_socket = false;
 
             if (privileged) {
                 open_files[i].pid   = -1;
@@ -294,9 +297,16 @@ int VFS_Write(int fd, size_t count, void* buf, bool privileged)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES)
         return (int)serror(EBADF);
-    
+
     if (!open_files[fd].exists)
         return (int)serror(EBADF);
+
+    
+    if (open_files[fd].is_socket) {
+        if (open_files[fd].pid != proc_get_current_pid())
+            return (int)serror(EACCES);
+        return unix_sock_write(open_files[fd].unix_sock_id, buf, count);
+    }
 
     if (!privileged && open_files[fd].pid != proc_get_current_pid() && !open_files[fd].write_all)
         return (int)serror(EACCES);
@@ -311,7 +321,6 @@ int VFS_Write(int fd, size_t count, void* buf, bool privileged)
     if (!open_files[fd].file)
         return (int)serror(EBADF);
 
-    
     if (open_files[fd].is_dev && open_files[fd].dev->write != NULL)
         return open_files[fd].dev->write(count, buf);
 
@@ -335,12 +344,19 @@ int VFS_Read(int fd, size_t count, void* buf)
     if (!open_files[fd].exists)
         return (int)serror(EBADF);
 
+    
+    if (open_files[fd].is_socket) {
+        if (open_files[fd].pid != proc_get_current_pid())
+            return (int)serror(EACCES);
+        return unix_sock_read(open_files[fd].unix_sock_id, buf, count);
+    }
+
     if (open_files[fd].pid != -1 && open_files[fd].pid != proc_get_current_pid())
         return (int)serror(EACCES);
 
     if (!open_files[fd].file)
         return (int)serror(EBADF);
-    
+
     if (open_files[fd].is_dev && open_files[fd].dev->read != NULL)
         return open_files[fd].dev->read(count, buf);
 
@@ -358,6 +374,16 @@ int VFS_Close(int fd, bool privileged)
 
     if (!open_files[fd].exists)
         return (int)serror(EBADF);
+
+    
+    if (open_files[fd].is_socket) {
+        if (!privileged && open_files[fd].pid != proc_get_current_pid())
+            return (int)serror(EACCES);
+        unix_sock_destroy(open_files[fd].unix_sock_id);
+        open_files[fd].exists    = false;
+        open_files[fd].is_socket = false;
+        return 0;
+    }
 
     if (!privileged && (open_files[fd].flags & KERNEL))
         return (int)serror(EACCES);
@@ -441,6 +467,275 @@ int VFS_Set_Pos(int fd, uint32_t pos, bool privileged)
     return (int)serror(ESPIPE);
 }
 
+
+
+
+
+
+
+
+
+static int vfs_alloc_socket_fd(int sock_id)
+{
+    
+    for (int i = 4; i < MAX_OPEN_FILES; i++) {
+        if (!open_files[i].exists) {
+            memset(&open_files[i], 0, sizeof(VFS_File_t));
+            open_files[i].exists       = true;
+            open_files[i].is_socket    = true;
+            open_files[i].unix_sock_id = sock_id;
+            open_files[i].pid          = proc_get_current_pid();
+            open_files[i].path         = NULL;  
+            return i;
+        }
+    }
+    return -1;
+}
+
+
+
+int VFS_Socket(int domain, int type, int protocol)
+{
+    (void)protocol;
+
+    if (domain != AF_UNIX) {
+        log_err("VFS", "VFS_Socket: only AF_UNIX is supported (got %d)", domain);
+        return (int)serror(EAFNOSUPPORT);
+    }
+
+    if (type != SOCK_STREAM && type != SOCK_DGRAM) {
+        log_err("VFS", "VFS_Socket: unsupported type %d", type);
+        return (int)serror(ESOCKTNOSUPPORT);
+    }
+
+    int sock_id = unix_sock_create(type);
+    if (sock_id < 0) {
+        log_err("VFS", "VFS_Socket: unix socket table full");
+        return (int)serror(ENFILE);
+    }
+
+    int fd = vfs_alloc_socket_fd(sock_id);
+    if (fd < 0) {
+        unix_sock_destroy(sock_id);
+        log_err("VFS", "VFS_Socket: open_files table full");
+        return (int)serror(EMFILE);
+    }
+
+    log_ok("VFS", "socket(): fd=%d sock_id=%d type=%s",
+           fd, sock_id, type == SOCK_STREAM ? "STREAM" : "DGRAM");
+    return fd;
+}
+
+
+
+int VFS_Bind(int fd, const struct sockaddr_un *addr, uint32_t addrlen)
+{
+    if (fd < 0 || fd >= MAX_OPEN_FILES)
+        return (int)serror(EBADF);
+    if (!open_files[fd].exists || !open_files[fd].is_socket)
+        return (int)serror(ENOTSOCK);
+    if (open_files[fd].pid != proc_get_current_pid())
+        return (int)serror(EACCES);
+    if (!addr || addrlen < sizeof(uint16_t))
+        return (int)serror(EINVAL);
+    if (addr->sun_family != AF_UNIX)
+        return (int)serror(EAFNOSUPPORT);
+
+    const char *path = addr->sun_path;
+
+    
+
+
+
+
+    VFS_Create(path, false);
+
+    int rc = unix_sock_bind(open_files[fd].unix_sock_id, path);
+    if (rc < 0) {
+        log_err("VFS", "VFS_Bind: bind failed for fd=%d path='%s'", fd, path);
+        return (int)serror(EADDRINUSE);
+    }
+
+    
+    open_files[fd].path = addr->sun_path;
+
+    log_ok("VFS", "bind(): fd=%d -> '%s'", fd, path);
+    return 0;
+}
+
+
+
+int VFS_Listen(int fd, int backlog)
+{
+    if (fd < 0 || fd >= MAX_OPEN_FILES)
+        return (int)serror(EBADF);
+    if (!open_files[fd].exists || !open_files[fd].is_socket)
+        return (int)serror(ENOTSOCK);
+    if (open_files[fd].pid != proc_get_current_pid())
+        return (int)serror(EACCES);
+
+    int rc = unix_sock_listen(open_files[fd].unix_sock_id, backlog);
+    if (rc < 0) {
+        log_err("VFS", "VFS_Listen: listen failed for fd=%d", fd);
+        return (int)serror(EOPNOTSUPP);
+    }
+
+    log_ok("VFS", "listen(): fd=%d sock_id=%d", fd, open_files[fd].unix_sock_id);
+    return 0;
+}
+
+
+
+int VFS_Accept(int fd, struct sockaddr_un *peer_addr, uint32_t *addrlen)
+{
+    if (fd < 0 || fd >= MAX_OPEN_FILES)
+        return (int)serror(EBADF);
+    if (!open_files[fd].exists || !open_files[fd].is_socket)
+        return (int)serror(ENOTSOCK);
+    if (open_files[fd].pid != proc_get_current_pid())
+        return (int)serror(EACCES);
+
+    
+    int new_sock_id = unix_sock_accept(open_files[fd].unix_sock_id);
+    if (new_sock_id < 0) {
+        log_err("VFS", "VFS_Accept: accept failed on fd=%d", fd);
+        return (int)serror(EINVAL);
+    }
+
+    
+    if (peer_addr && addrlen && *addrlen >= sizeof(struct sockaddr_un)) {
+        unix_socket_t *conn_sock = unix_sock_get(new_sock_id);
+        if (conn_sock && conn_sock->peer_id >= 0) {
+            unix_socket_t *client_sock = unix_sock_get(conn_sock->peer_id);
+            if (client_sock) {
+                peer_addr->sun_family = AF_UNIX;
+                strncpy(peer_addr->sun_path, client_sock->path, UNIX_PATH_MAX - 1);
+                peer_addr->sun_path[UNIX_PATH_MAX - 1] = '\0';
+            }
+        }
+        *addrlen = sizeof(struct sockaddr_un);
+    }
+
+    
+    int new_fd = vfs_alloc_socket_fd(new_sock_id);
+    if (new_fd < 0) {
+        unix_sock_destroy(new_sock_id);
+        log_err("VFS", "VFS_Accept: open_files full, dropping connection");
+        return (int)serror(EMFILE);
+    }
+
+    log_ok("VFS", "accept(): listener fd=%d -> new fd=%d (sock_id=%d)",
+           fd, new_fd, new_sock_id);
+    return new_fd;
+}
+
+
+
+int VFS_Connect(int fd, const struct sockaddr_un *addr, uint32_t addrlen)
+{
+    if (fd < 0 || fd >= MAX_OPEN_FILES)
+        return (int)serror(EBADF);
+    if (!open_files[fd].exists || !open_files[fd].is_socket)
+        return (int)serror(ENOTSOCK);
+    if (open_files[fd].pid != proc_get_current_pid())
+        return (int)serror(EACCES);
+    if (!addr || addrlen < sizeof(uint16_t))
+        return (int)serror(EINVAL);
+    if (addr->sun_family != AF_UNIX)
+        return (int)serror(EAFNOSUPPORT);
+
+    
+    int rc = unix_sock_connect(open_files[fd].unix_sock_id, addr->sun_path);
+    if (rc < 0) {
+        log_err("VFS", "VFS_Connect: connect failed for fd=%d path='%s'",
+                fd, addr->sun_path);
+        return (int)serror(ECONNREFUSED);
+    }
+
+    log_ok("VFS", "connect(): fd=%d -> '%s'", fd, addr->sun_path);
+    return 0;
+}
+
+
+
+int VFS_SendTo(int fd, const void *buf, size_t count,
+               const struct sockaddr_un *dest)
+{
+    if (fd < 0 || fd >= MAX_OPEN_FILES)
+        return (int)serror(EBADF);
+    if (!open_files[fd].exists || !open_files[fd].is_socket)
+        return (int)serror(ENOTSOCK);
+    if (open_files[fd].pid != proc_get_current_pid())
+        return (int)serror(EACCES);
+
+    unix_socket_t *s = unix_sock_get(open_files[fd].unix_sock_id);
+    if (!s)
+        return (int)serror(EBADF);
+
+    if (s->type == SOCK_STREAM) {
+        
+
+
+
+        return unix_sock_write(open_files[fd].unix_sock_id, buf, count);
+    }
+
+    
+    if (!dest) {
+        log_err("VFS", "VFS_SendTo: DGRAM socket requires a destination");
+        return (int)serror(EDESTADDRREQ);
+    }
+    if (dest->sun_family != AF_UNIX)
+        return (int)serror(EAFNOSUPPORT);
+
+    int rc = unix_sock_sendto(open_files[fd].unix_sock_id,
+                              buf, count, dest->sun_path);
+    if (rc < 0)
+        return (int)serror(ENOENT); 
+    return rc;
+}
+
+
+
+int VFS_RecvFrom(int fd, void *buf, size_t count,
+                 struct sockaddr_un *src_out)
+{
+    if (fd < 0 || fd >= MAX_OPEN_FILES)
+        return (int)serror(EBADF);
+    if (!open_files[fd].exists || !open_files[fd].is_socket)
+        return (int)serror(ENOTSOCK);
+    if (open_files[fd].pid != proc_get_current_pid())
+        return (int)serror(EACCES);
+
+    unix_socket_t *s = unix_sock_get(open_files[fd].unix_sock_id);
+    if (!s)
+        return (int)serror(EBADF);
+
+    if (s->type == SOCK_STREAM) {
+        
+        return unix_sock_read(open_files[fd].unix_sock_id, buf, count);
+    }
+
+    
+    char src_path[UNIX_PATH_MAX] = {0};
+    int rc = unix_sock_recvfrom(open_files[fd].unix_sock_id,
+                                buf, count, src_path);
+    if (rc < 0)
+        return (int)serror(EIO);
+
+    if (src_out) {
+        src_out->sun_family = AF_UNIX;
+        strncpy(src_out->sun_path, src_path, UNIX_PATH_MAX - 1);
+        src_out->sun_path[UNIX_PATH_MAX - 1] = '\0';
+    }
+
+    return rc;
+}
+
+
+
+
+
 static void create_special_files(void)
 {
     VFS_Create("/dev", true);
@@ -454,25 +749,21 @@ static void create_special_files(void)
     block_device_t *tmp_ramdisk = ramdisk_create_blockdev("ram1", 4 * 1024 * 1024);
     block_register(tmp_ramdisk);
     ext2_format(tmp_ramdisk);
-    VFS_Mount("ram0", "/dev");
-    log_ok("VFS", "Created and mounted device ramdisk(/tmp, ram1)");
+    VFS_Mount("ram1", "/tmp");
+    log_ok("VFS", "Created and mounted tmp ramdisk(/tmp, ram1)");
 
     stdin_device_init("/dev/stdin");
     stdout_device_init("/dev/stdout");
     if (VFS_Create("/dev/stderr", false) < 0)
-        log_err("VFS", "Failed to create special file 4\n This could just be becuase it already exists");
+        log_err("VFS", "Failed to create special file 4\n This could just be because it already exists");
     if (VFS_Create("/dev/stddbg", false) < 0)
-        log_err("VFS", "Failed to create special file 5\n This could just be becuase it already exists");
+        log_err("VFS", "Failed to create special file 5\n This could just be because it already exists");
 
-    if (VFS_Open("/dev/stdin", true) < 0)
-        log_err("VFS", "Failed to open special file 1");
-    if (VFS_Open("/dev/stdout", true) < 0)
-        log_err("VFS", "Failed to open special file 2");
-    if (VFS_Open("/dev/stderr", true) < 0)
-        log_err("VFS", "Failed to open special file 3");
-    if (VFS_Open("/dev/stddbg", true) < 0)
-        log_err("VFS", "Failed to open special file 4");
-    
+    if (VFS_Open("/dev/stdin",  true) < 0) log_err("VFS", "Failed to open special file 1");
+    if (VFS_Open("/dev/stdout", true) < 0) log_err("VFS", "Failed to open special file 2");
+    if (VFS_Open("/dev/stderr", true) < 0) log_err("VFS", "Failed to open special file 3");
+    if (VFS_Open("/dev/stddbg", true) < 0) log_err("VFS", "Failed to open special file 4");
+
     setwriteall(true, 1);
     setwriteall(true, 2);
     setwriteall(true, 3);
@@ -483,15 +774,19 @@ void VFS_Init(void)
     open_files = kmalloc(MAX_OPEN_FILES * sizeof(VFS_File_t));
 
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
-        open_files[i].exists   = false;
-        open_files[i].file     = NULL;
-        open_files[i].dir_iter = NULL;
-        open_files[i].is_dir   = false;
-        open_files[i].fs       = NULL;
+        open_files[i].exists    = false;
+        open_files[i].file      = NULL;
+        open_files[i].dir_iter  = NULL;
+        open_files[i].is_dir    = false;
+        open_files[i].fs        = NULL;
+        open_files[i].is_socket = false;
     }
 
     for (int i = 0; i < MAX_MOUNTS; i++)
         mount_table[i].active = false;
+
+    
+    unix_sock_init();
 
     const char* rd = config_get("bootdisk", "iso");
     if (strcmp(rd, "iso") == 0) {
@@ -527,7 +822,7 @@ void VFS_Init(void)
 
         block_device_t* bd = ata_create_primary_blockdev("root");
         if (bd == NULL)
-            panic("VFS", "Failed to mount root drive\nHELP: Try to mount the drive from another OS and make sure that:\nThe drive is correctly configured in /etc/kernel.conf");
+            panic("VFS", "Failed to mount root drive");
 
         log_info("VFS", "Sector size: %d", bd->sector_size);
 

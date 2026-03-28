@@ -5,6 +5,7 @@
 #include <drivers/fs/ext/ext2.h>
 #include <device/device.h>
 #include <user/user.h>
+#include <net/unix_socket.h>   
 
 typedef int fd_t;
 
@@ -54,6 +55,9 @@ typedef struct {
     device_t*        dev;
     bool             is_dev;
     bool             write_all;
+
+    bool             is_socket;     
+    int              unix_sock_id;  
 } VFS_File_t;
 
 #define VFS_FD_STDIN    0
@@ -63,6 +67,7 @@ typedef struct {
 #define MAX_OPEN_FILES  100
 #define MAX_MOUNTS      16
 
+
 int  VFS_Create(const char* path, bool isDir);
 int  VFS_Open(const char* path, bool privileged);
 int  VFS_Read(int fd, size_t count, void* buf);
@@ -71,11 +76,23 @@ int  VFS_Close(int fd, bool privileged);
 int  VFS_Set_Pos(int fd, uint32_t pos, bool privileged);
 int  VFS_GetDents64(int fd, struct linux_dirent64* buf, size_t count);
 int  VFS_ioctl(int fd, uint64_t req, void* arg);
-// DEPERECATED
+
+/* DEPRECATED */
 int  VFS_Write_old(fd_t file, uint8_t* data, size_t size);
+
 int  VFS_Mount(const char* source, const char* target);
 int  VFS_Unmount_Path(const char* target);
 void VFS_Init(void);
 void VFS_Unmount(void);
+int VFS_Socket(int domain, int type, int protocol);
+int VFS_Bind(int fd, const struct sockaddr_un *addr, uint32_t addrlen);
+int VFS_Listen(int fd, int backlog);
+int VFS_Accept(int fd, struct sockaddr_un *peer_addr, uint32_t *addrlen);
+int VFS_Connect(int fd, const struct sockaddr_un *addr, uint32_t addrlen);
+int VFS_SendTo(int fd, const void *buf, size_t count,
+               const struct sockaddr_un *dest);
+
+int VFS_RecvFrom(int fd, void *buf, size_t count,
+                 struct sockaddr_un *src_out);
 
 uint64_t sys_execve(uint64_t path, uint64_t argv, uint64_t envp);

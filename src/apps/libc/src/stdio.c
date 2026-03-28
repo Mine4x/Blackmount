@@ -9,124 +9,136 @@ void puts(const char* str)
 {
     while (*str)
     {
-        putc(*str);
-        str++;
+        putc(*str++);
     }
 }
 
-void print_int(int value)
+int format(char *out, int size, const char *fmt, va_list args)
 {
-    char buffer[12]; // Enough for 32-bit int
-    int i = 0;
-    bool negative = false;
+    int pos = 0;
 
-    if (value == 0) {
-        putc('0');
-        return;
+    for (const char *p = fmt; *p && pos < size - 1; p++) {
+        if (*p != '%') {
+            out[pos++] = *p;
+            continue;
+        }
+
+        p++;
+
+        if (*p == 's') {
+            const char *s = va_arg(args, const char *);
+            while (*s && pos < size - 1)
+                out[pos++] = *s++;
+        } else if (*p == 'd') {
+            int value = va_arg(args, int);
+            char buf[32];
+            int i = 0, neg = 0;
+
+            if (value == 0) {
+                buf[i++] = '0';
+            } else {
+                if (value < 0) {
+                    neg = 1;
+                    value = -value;
+                }
+                while (value > 0) {
+                    buf[i++] = '0' + (value % 10);
+                    value /= 10;
+                }
+                if (neg)
+                    buf[i++] = '-';
+            }
+
+            while (i > 0 && pos < size - 1)
+                out[pos++] = buf[--i];
+        } else if (*p == 'x') {
+            unsigned int value = va_arg(args, unsigned int);
+            char buf[32];
+            int i = 0;
+
+            if (value == 0) {
+                buf[i++] = '0';
+            } else {
+                while (value > 0) {
+                    int d = value % 16;
+                    buf[i++] = d < 10 ? '0' + d : 'a' + (d - 10);
+                    value /= 16;
+                }
+            }
+
+            while (i > 0 && pos < size - 1)
+                out[pos++] = buf[--i];
+        } else if (*p == 'c') {
+            out[pos++] = (char)va_arg(args, int);
+        } else if (*p == '%') {
+            out[pos++] = '%';
+        }
     }
 
-    if (value < 0) {
-        negative = true;
-        value = -value;
-    }
-
-    while (value > 0) {
-        buffer[i++] = '0' + (value % 10);
-        value /= 10;
-    }
-
-    if (negative) {
-        buffer[i++] = '-';
-    }
-
-    // Print in reverse
-    while (i--) {
-        putc(buffer[i]);
-    }
+    out[pos] = '\0';
+    return pos;
 }
 
-void print_hex(unsigned int value)
+int vfdprintf(int fd, const char* fmt, va_list args)
 {
-    char buffer[9]; // 8 digits for 32-bit + null
-    int i = 0;
+    char buf[1024];
+    int len = format(buf, sizeof(buf), fmt, args);
+    write(fd, buf, len);
+    return len;
+}
 
-    if (value == 0) {
-        putc('0');
-        return;
-    }
-
-    while (value > 0) {
-        int digit = value % 16;
-        if (digit < 10)
-            buffer[i++] = '0' + digit;
-        else
-            buffer[i++] = 'a' + (digit - 10);
-        value /= 16;
-    }
-
-    while (i--) {
-        putc(buffer[i]);
-    }
+int fdprintf(int fd, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    int len = vfdprintf(fd, fmt, args);
+    va_end(args);
+    return len;
 }
 
 void printf(const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-
-    while (*fmt) {
-        if (*fmt == '%') {
-            fmt++;
-            switch (*fmt) {
-                case 's': {
-                    const char* str = va_arg(args, const char*);
-                    puts(str);
-                    break;
-                }
-                case 'c': {
-                    char c = (char)va_arg(args, int);
-                    putc(c);
-                    break;
-                }
-                case 'd': {
-                    int num = va_arg(args, int);
-                    print_int(num);
-                    break;
-                }
-                case 'x': {
-                    unsigned int num = va_arg(args, unsigned int);
-                    print_hex(num);
-                    break;
-                }
-                case '%': {
-                    putc('%');
-                    break;
-                }
-                default: {
-                    // Unknown specifier, print as-is
-                    putc('%');
-                    putc(*fmt);
-                    break;
-                }
-            }
-        } else {
-            putc(*fmt);
-        }
-        fmt++;
-    }
-
+    vfdprintf(STDOUT, fmt, args);
     va_end(args);
+}
+
+void errorf(const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vfdprintf(STDOUT, fmt, args);
+    va_end(args);
+}
+
+int snprintf(char *out, int size, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    int len = format(out, size, fmt, args);
+    va_end(args);
+    return len;
+}
+
+int sprintf(char *str, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    int len = format(str, 1 << 30, fmt, args);
+    va_end(args);
+    return len;
 }
 
 void scanf(const char* fmt, ...)
 {
-    char buf[104];                   
+    char buf[104];
     int n = read(STDIN, buf, sizeof(buf) - 1);
     if (n <= 0) return;
 
     buf[n] = '\0';
-
     char* p = buf;
+
     va_list args;
     va_start(args, fmt);
 
@@ -152,20 +164,16 @@ void scanf(const char* fmt, ...)
                 }
 
                 *iptr = neg ? -value : value;
-            }
-
-            else if (*fmt == 's') {
+            } else if (*fmt == 's') {
                 char* str = va_arg(args, char*);
 
-                // skip whitespace
                 while (*p == ' ' || *p == '\n' || *p == '\t') p++;
 
-                // copy characters until whitespace
                 while (*p && *p != ' ' && *p != '\n' && *p != '\t') {
                     *str++ = *p++;
                 }
 
-                *str = '\0'; // terminate string
+                *str = '\0';
             }
         }
         fmt++;
@@ -195,71 +203,6 @@ char *fgets(char *buf, int size, int fd)
     return buf;
 }
 
-int itoa(int value, char *buf)
-{
-    char tmp[32];
-    int i = 0, j = 0, neg = 0;
-
-    if (value == 0) {
-        buf[0] = '0';
-        buf[1] = '\0';
-        return 1;
-    }
-
-    if (value < 0) {
-        neg = 1;
-        value = -value;
-    }
-
-    while (value > 0) {
-        tmp[i++] = '0' + (value % 10);
-        value /= 10;
-    }
-
-    if (neg)
-        tmp[i++] = '-';
-
-    while (i > 0)
-        buf[j++] = tmp[--i];
-
-    buf[j] = '\0';
-    return j;
-}
-
-int snprintf(char *out, int size, const char *fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-
-    int pos = 0;
-
-    for (const char *p = fmt; *p && pos < size - 1; p++) {
-        if (*p != '%') {
-            out[pos++] = *p;
-            continue;
-        }
-
-        p++;
-
-        if (*p == 's') {
-            const char *s = va_arg(args, const char *);
-            while (*s && pos < size - 1)
-                out[pos++] = *s++;
-        } else if (*p == 'd') {
-            char buf[32];
-            itoa(va_arg(args, int), buf);
-            for (char *b = buf; *b && pos < size - 1; b++)
-                out[pos++] = *b;
-        } else {
-            out[pos++] = *p;
-        }
-    }
-
-    out[pos] = '\0';
-    va_end(args);
-    return pos;
-}
-
 int atoi(const char *s)
 {
     int result = 0;
@@ -281,43 +224,4 @@ int atoi(const char *s)
     }
 
     return sign * result;
-}
-
-int sprintf(char *str, const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    char *ptr = str;
-    const char *f = format;
-
-    while (*f) {
-        if (*f == '%') {
-            f++;
-            if (*f == 'd') {
-                int val = va_arg(args, int);
-                char buf[32];
-                sprintf(buf, "%d", val);
-                for (char *b = buf; *b; b++) *ptr++ = *b;
-            } else if (*f == 'f') {
-                double val = va_arg(args, double);
-                char buf[64];
-                sprintf(buf, "%f", val);
-                for (char *b = buf; *b; b++) *ptr++ = *b;
-            } else if (*f == 's') {
-                char *val = va_arg(args, char *);
-                while (*val) *ptr++ = *val++;
-            } else if (*f == 'c') {
-                char val = (char)va_arg(args, int);
-                *ptr++ = val;
-            } else {
-                *ptr++ = *f;
-            }
-        } else {
-            *ptr++ = *f;
-        }
-        f++;
-    }
-
-    *ptr = '\0';
-    va_end(args);
-    return ptr - str;
 }

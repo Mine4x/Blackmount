@@ -358,3 +358,111 @@ int user_authenticate(const char* username, const char* password)
 {
     return (int)syscall6(SYSCALL_AUTHU, (uint64_t)username, (uint64_t)password, 0 ,0,0,0);
 }
+
+/* =========================================================================
+ * UNIX domain sockets
+ * ========================================================================= */
+
+int socket(int domain, int type, int protocol)
+{
+    return (int)syscall6(SYSCALL_SOCKET,
+                         (uint64_t)domain, (uint64_t)type, (uint64_t)protocol,
+                         0, 0, 0);
+}
+
+int bind(int sockfd, const struct sockaddr_un *addr, socklen_t addrlen)
+{
+    return (int)syscall6(SYSCALL_BIND,
+                         (uint64_t)sockfd, (uint64_t)addr, (uint64_t)addrlen,
+                         0, 0, 0);
+}
+
+int listen(int sockfd, int backlog)
+{
+    return (int)syscall6(SYSCALL_LISTEN,
+                         (uint64_t)sockfd, (uint64_t)backlog,
+                         0, 0, 0, 0);
+}
+
+int accept(int sockfd, struct sockaddr_un *addr, socklen_t *addrlen)
+{
+    return (int)syscall6(SYSCALL_ACCEPT,
+                         (uint64_t)sockfd, (uint64_t)addr, (uint64_t)addrlen,
+                         0, 0, 0);
+}
+
+int connect(int sockfd, const struct sockaddr_un *addr, socklen_t addrlen)
+{
+    return (int)syscall6(SYSCALL_CONNECT,
+                         (uint64_t)sockfd, (uint64_t)addr, (uint64_t)addrlen,
+                         0, 0, 0);
+}
+
+ssize_t send(int sockfd, const void *buf, size_t len, int flags)
+{
+    return (ssize_t)syscall6(SYSCALL_SENDTO,
+                             (uint64_t)sockfd, (uint64_t)buf, (uint64_t)len,
+                             (uint64_t)flags, 0, 0);
+}
+
+ssize_t recv(int sockfd, void *buf, size_t len, int flags)
+{
+    return (ssize_t)syscall6(SYSCALL_RECVFROM,
+                             (uint64_t)sockfd, (uint64_t)buf, (uint64_t)len,
+                             (uint64_t)flags, 0, 0);
+}
+
+ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
+               const struct sockaddr_un *dest_addr, socklen_t addrlen)
+{
+    return (ssize_t)syscall6(SYSCALL_SENDTO,
+                             (uint64_t)sockfd, (uint64_t)buf, (uint64_t)len,
+                             (uint64_t)flags, (uint64_t)dest_addr,
+                             (uint64_t)addrlen);
+}
+
+ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
+                 struct sockaddr_un *src_addr, socklen_t *addrlen)
+{
+    return (ssize_t)syscall6(SYSCALL_RECVFROM,
+                             (uint64_t)sockfd, (uint64_t)buf, (uint64_t)len,
+                             (uint64_t)flags, (uint64_t)src_addr,
+                             (uint64_t)addrlen);
+}
+
+int shutdown(int sockfd, int how)
+{
+    return (int)syscall6(SYSCALL_SHUTDOWN,
+                         (uint64_t)sockfd, (uint64_t)how,
+                         0, 0, 0, 0);
+}
+
+int getsockname(int sockfd, struct sockaddr_un *addr, socklen_t *addrlen)
+{
+    return (int)syscall6(SYSCALL_GETSOCKNAME,
+                         (uint64_t)sockfd, (uint64_t)addr, (uint64_t)addrlen,
+                         0, 0, 0);
+}
+
+int getpeername(int sockfd, struct sockaddr_un *addr, socklen_t *addrlen)
+{
+    return (int)syscall6(SYSCALL_GETPEERNAME,
+                         (uint64_t)sockfd, (uint64_t)addr, (uint64_t)addrlen,
+                         0, 0, 0);
+}
+
+int setsockopt(int sockfd, int level, int optname,
+               const void *optval, socklen_t optlen)
+{
+    return (int)syscall6(SYSCALL_SETSOCKOPT,
+                         (uint64_t)sockfd, (uint64_t)level, (uint64_t)optname,
+                         (uint64_t)optval, (uint64_t)optlen, 0);
+}
+
+int getsockopt(int sockfd, int level, int optname,
+               void *optval, socklen_t *optlen)
+{
+    return (int)syscall6(SYSCALL_GETSOCKOPT,
+                         (uint64_t)sockfd, (uint64_t)level, (uint64_t)optname,
+                         (uint64_t)optval, (uint64_t)optlen, 0);
+}

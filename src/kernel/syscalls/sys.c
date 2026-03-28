@@ -1,4 +1,4 @@
-#include "sys_proc.h"
+#include "sys.h"
 #include <proc/proc.h>
 #include <hal/vfs.h>
 #include <drivers/fs/ext/ext2.h>
@@ -8,6 +8,18 @@
 #include <memory.h>
 #include <debug.h>
 #include <errno/errno.h>
+#include <arch/x86_64/io.h>
+#include <console/console.h>
+#include <hal/vfs.h>
+
+#define TCGETS 0x5401
+
+#define O_RDONLY  0
+#define O_WRONLY  1
+#define O_RDWR    2
+#define O_CREAT   64
+#define O_TRUNC   512
+#define O_APPEND  1024
 
 #define ARCH_SET_GS  0x1001
 #define ARCH_SET_FS  0x1002
@@ -695,4 +707,102 @@ uint64_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
     (void)unused1; (void)unused2; (void)unused3;
 
     return (uint64_t)VFS_Write((fd_t)fd, count, (void*)buf, false);
+}
+
+uint64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
+                  uint64_t unused1, uint64_t unused2, uint64_t unused3)
+{
+    (void)unused1;
+    (void)unused2;
+    (void)unused3;
+
+    return VFS_Read((int)fd, (size_t)count, (void*)buf);
+}
+
+uint64_t sys_open(uint64_t path, uint64_t flags)
+{
+    if (!path)
+        return serror(EFAULT);
+
+    if (flags & O_CREAT) {
+        int result = VFS_Create((const char*)path, false);
+        if (result < 0)
+            return serror(EEXIST);
+    }
+
+    int fd = VFS_Open((const char*)path, (flags & O_RDWR) || (flags & O_WRONLY));
+    if (fd < 0)
+        return serror(ENOENT);
+
+    return (uint64_t)fd;
+}
+
+uint64_t sys_close(uint64_t fd)
+{
+    int r = VFS_Close((int)fd, false);
+    return r < 0 ? serror(EBADF) : 0;
+}
+
+uint64_t sys_ioctl(uint64_t fd, uint64_t req, uint64_t arg)
+{
+    if ((fd == 1 || fd == 2) && req == TCGETS) {
+        if (arg) memset((void *)arg, 0, 44);
+        return 0;
+    }
+
+    int r = VFS_ioctl((int)fd, req, (void *)arg);
+    return r < 0 ? serror(EBADF) : (uint64_t)r;
+}
+
+uint64_t sys_getdents64(uint64_t fd, uint64_t buf, uint64_t size)
+{
+    if (!buf)
+        return serror(EFAULT);
+
+    int r = VFS_GetDents64((int)fd, (struct linux_dirent64*)buf, (size_t)size);
+    return r < 0 ? serror(EBADF) : (uint64_t)r;
+}
+
+uint64_t sys_create(uint64_t path, uint64_t is_dir)
+{
+    if (!path)
+        return serror(EFAULT);
+
+    int r = VFS_Create((const char*)path, (bool)is_dir);
+    return r < 0 ? serror(EEXIST) : 0;
+}
+
+uint64_t sys_socket(uint64_t domain, uint64_t type, uint64_t protocol)
+{
+    return VFS_Socket(domain, type, protocol);
+}
+
+uint64_t sys_bind(uint64_t fd, uint64_t addr, uint64_t addrlen)
+{
+    return VFS_Bind(fd, (const struct sockaddr_un*)addr, (uint32_t)addrlen);
+}
+
+uint64_t sys_listen(uint64_t fd, uint64_t backlog)
+{
+    return VFS_Listen(fd, backlog);
+}
+
+uint64_t sys_accept(uint64_t fd, uint64_t addr, uint64_t addrlen)
+{
+    return VFS_Accept(fd, (const struct sockaddr_un*)addr, (uint32_t)addrlen);
+}
+
+uint64_t connect(uint64_t fd, uint64_t addr, uint64_t addrlen)
+{
+    return VFS_Connect(fd, (const struct sockaddr_un*)addr, (uint32_t)addrlen);
+}
+
+uint64_t sendto(uint64_t fd, uint64_t buf, uint64_t count, uint64_t dest)
+{
+    return VFS_SendTo(fd, (const void*)buf, count, (const struct sockaddr_un*)dest);
+}
+
+uint64_t recvfrom(uint64_t fd, uint64_t buf, uint64_t count, uint64_t src_out)
+{
+    return VFS_RecvFrom(fd, (void*)buf, count, (const struct sockaddr_un*)src_out);
 }
